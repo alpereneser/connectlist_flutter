@@ -19,6 +19,14 @@ import AdminMusics from '../views/admin/Musics.vue'
 import AdminPlaces from '../views/admin/Places.vue'
 import AdminBooks from '../views/admin/Books.vue'
 import AdminCompanies from '../views/admin/Companies.vue'
+import MovieDetails from '../views/MovieDetails.vue'
+import SeriesDetails from '../views/SeriesDetails.vue'
+import BookDetails from '../views/BookDetails.vue'
+import GameDetails from '../views/GameDetails.vue'
+import PersonDetails from '../views/PersonDetails.vue'
+import SelectCategory from '../views/SelectCategory.vue'
+import CreateList from '../views/CreateList.vue'
+import ListDetails from '../views/ListDetails.vue'
 import { supabase } from '../lib/supabase'
 import type { NavigationGuardNext, RouteLocationNormalized } from 'vue-router'
 
@@ -166,6 +174,49 @@ const router = createRouter({
     {
       path: '/settings',
       component: Settings,
+      beforeEnter: requireAuth
+    },
+    {
+      path: '/movies/:id',
+      component: MovieDetails,
+      beforeEnter: requireAuth
+    },
+    {
+      path: '/series/:id',
+      component: SeriesDetails,
+      beforeEnter: requireAuth
+    },
+    {
+      path: '/books/:id',
+      component: BookDetails,
+      beforeEnter: requireAuth
+    },
+    {
+      path: '/games/:id',
+      component: GameDetails,
+      beforeEnter: requireAuth
+    },
+    {
+      path: '/people/:id',
+      component: PersonDetails,
+      beforeEnter: requireAuth
+    },
+    {
+      path: '/select-category',
+      name: 'SelectCategory',
+      component: () => import('../views/SelectCategory.vue'),
+      beforeEnter: requireAuth
+    },
+    {
+      path: '/create-list/:category',
+      name: 'CreateList',
+      component: () => import('../views/CreateList.vue'),
+      beforeEnter: requireAuth
+    },
+    {
+      path: '/lists/:id',
+      name: 'ListDetails',
+      component: () => import('../views/ListDetails.vue'),
       beforeEnter: requireAuth
     }
   ]

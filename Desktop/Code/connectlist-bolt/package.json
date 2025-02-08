@@ -9,9 +9,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@headlessui/vue": "^1.7.23",
     "@supabase/supabase-js": "^2.39.3",
     "@vueuse/core": "^10.7.2",
+    "axios": "^1.7.9",
     "date-fns": "^4.1.0",
+    "lodash-es": "^4.17.21",
+    "pinia": "^2.3.1",
     "vue": "^3.5.13",
     "vue-router": "^4.2.5"
   },

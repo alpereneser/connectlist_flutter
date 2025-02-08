@@ -1,254 +1,301 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
 import { supabase } from '../lib/supabase'
+import { useRoute, useRouter } from 'vue-router'
+import { useUserStore } from '../stores/user'
 import Header from '../components/Header.vue'
-import { useRoute, useRouter } from 'vue-router' 
-import { PhPencil, PhUserPlus, PhUserMinus, PhEnvelope, PhCheck, PhX, PhCamera } from '@phosphor-icons/vue'
-import type { Database } from '../lib/supabase-types'
+import Footer from '../components/Footer.vue'
+import { Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot } from '@headlessui/vue'
+import { PhCamera, PhMapPin, PhX } from '@phosphor-icons/vue'
+
+interface Profile {
+  id: string
+  username: string
+  name: string
+  avatar_url?: string
+  about?: string
+  website?: string
+  location?: string
+  followers_count: number
+  following_count: number
+}
+
+interface FollowData {
+  follower_id: string
+  following_id: string
+  follower: {
+    id: string
+    username: string
+    name: string
+    avatar_url?: string
+  }
+  following: {
+    id: string
+    username: string
+    name: string
+    avatar_url?: string
+  }
+}
+
+interface Follow {
+  follower_id: string
+  following_id: string
+  follower: Profile
+  following: Profile
+}
+
+interface List {
+  id: string
+  title: string
+  description: string
+  category: string
+  items: any[]
+  created_at: string
+  user_id: string
+}
 
 const route = useRoute()
 const router = useRouter()
-const profile = ref<Database['public']['Tables']['profiles']['Row'] | null>(null)
-const isUploadingAvatar = ref(false)
-const editedProfile = ref<{
-  full_name: string
-  username: string
-  bio: string | null
-  website: string | null
-  location: string | null
-}>({
-  full_name: '',
-  username: '',
-  bio: null,
-  website: null,
-  location: null
-})
-const isEditing = ref(false)
-const currentUser = ref<string | null>(null)
-const isFollowing = ref(false)
-const followerCount = ref(0)
-const followingCount = ref(0)
+const userStore = useUserStore()
+
+const profile = ref<Profile | null>(null)
+const lists = ref<List[]>([])
+const loading = ref(true)
 const isLoading = ref(false)
 const error = ref('')
 const success = ref('')
+const showFollowersModal = ref(false)
+const showFollowingModal = ref(false)
+const showEditModal = ref(false)
+const followers = ref<Follow[]>([])
+const following = ref<Follow[]>([])
+const editedProfileData = ref({
+  name: '',
+  username: '',
+  about: '',
+  website: '',
+  location: ''
+})
 
-const isOwnProfile = computed(() => currentUser.value === profile.value?.id)
+// Computed properties
+const followerCount = computed(() => profile.value?.followers_count ?? 0)
+const followingCount = computed(() => profile.value?.following_count ?? 0)
+const isOwnProfile = computed(() => userStore.user?.id === profile.value?.id)
 
-const startEditing = () => {
-  if (profile.value) {
-    editedProfile.value = {
-      full_name: profile.value.full_name || '',
-      username: profile.value.username,
-      bio: profile.value.bio,
-      website: profile.value.website,
-      location: profile.value.location
-    }
-    isEditing.value = true
-  }
-}
+const isFollowing = computed(() => {
+  if (!profile.value || !userStore.user) return false
+  return following.value.some(f => f.following.id === profile.value.id)
+})
 
-const cancelEditing = () => {
-  isEditing.value = false
-  error.value = ''
-  success.value = ''
-}
-
-const uploadAvatar = async (event: Event) => {
-  const fileInput = event.target as HTMLInputElement
-  if (!fileInput.files || fileInput.files.length === 0) return
-  
-  const file = fileInput.files[0]
-  const fileExt = file.name.split('.').pop()
-  const fileName = `${Math.random()}.${fileExt}`
-  const filePath = `${fileName}`
-
-  isUploadingAvatar.value = true
-  error.value = ''
-
-  try {
-    // Upload image to Supabase Storage
-    const { error: uploadError } = await supabase.storage
-      .from('avatars')
-      .upload(filePath, file)
-
-    if (uploadError) throw uploadError
-
-    // Get public URL
-    const { data: { publicUrl } } = supabase.storage
-      .from('avatars')
-      .getPublicUrl(filePath)
-
-    // Delete old avatar if exists
-    if (profile.value?.avatar_url) {
-      const oldFilePath = profile.value.avatar_url.split('/').pop()
-      if (oldFilePath) {
-        await supabase.storage
-          .from('avatars')
-          .remove([oldFilePath])
-      }
-    }
-
-    // Update profile with new avatar URL
-    const { error: updateError } = await supabase
-      .from('profiles')
-      .update({
-        avatar_url: publicUrl,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', profile.value?.id)
-
-    if (updateError) throw updateError
-
-    success.value = 'Profile photo updated successfully'
-    await loadProfile() // Reload profile data
-  } catch (err: any) {
-    error.value = err.message
-  } finally {
-    isUploadingAvatar.value = false
-  }
-}
-
-const saveProfile = async () => {
-  if (!profile.value) return
-  
-  isLoading.value = true
-  error.value = ''
-  success.value = ''
-
-  try {
-    // Check if username is taken (if changed)
-    if (editedProfile.value.username !== profile.value.username) {
-      const { data: existingUser } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('username', editedProfile.value.username)
-        .maybeSingle()
-
-      if (existingUser) {
-        throw new Error('Username is already taken')
-      }
-    }
-
-    const { error: updateError } = await supabase
-      .from('profiles')
-      .update({
-        username: editedProfile.value.username,
-        full_name: editedProfile.value.full_name,
-        bio: editedProfile.value.bio,
-        website: editedProfile.value.website,
-        location: editedProfile.value.location,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', profile.value.id)
-
-    if (updateError) throw updateError
-
-    success.value = 'Profile updated successfully'
-    await loadProfile() // Reload profile data
-    isEditing.value = false
-  } catch (err: any) {
-    error.value = err.message
-  } finally {
-    isLoading.value = false
-  }
-}
-
+// Load profile data
 const loadProfile = async () => {
-  error.value = ''
-  isLoading.value = true
-  const username = (route.params.username as string)?.toLowerCase()?.trim()?.replace('@', '')
-
-  if (!username?.trim()) {
-    error.value = 'Username is required'
-    isLoading.value = false
+  const username = route.params.username?.toString().replace('@', '')
+  if (!username) {
+    error.value = 'Invalid username'
     return
   }
 
   try {
-    // Get user and profile data in parallel
-    const [{ data: { user } }, { data: profileData, error: profileError }] = await Promise.all([
-      supabase.auth.getUser(),
-      supabase
-        .from('profiles')
-        .select('*')
-        .eq('username', username)
-        .maybeSingle()
-    ])
-
-    if (profileError) throw profileError
+    loading.value = true
     
-    if (!profileData) {
-      error.value = 'Profile not found'
-      isLoading.value = false
-      return
+    // First get the user ID from username
+    const { data: userData, error: userError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('username', username)
+      .single()
+
+    if (userError) throw userError
+    if (!userData) throw new Error('User not found')
+
+    // Get follower count
+    const { data: followers, error: followersError } = await supabase
+      .from('follows')
+      .select('follower_id')
+      .eq('following_id', userData.id)
+
+    if (followersError) throw followersError
+
+    // Get following count
+    const { data: following, error: followingError } = await supabase
+      .from('follows')
+      .select('following_id')
+      .eq('follower_id', userData.id)
+
+    if (followingError) throw followingError
+
+    // Create profile object with all required fields
+    profile.value = {
+      id: userData.id,
+      username: userData.username,
+      name: userData.name,
+      avatar_url: userData.avatar_url,
+      about: userData.about,
+      website: userData.website,
+      location: userData.location,
+      followers_count: followers?.length || 0,
+      following_count: following?.length || 0
     }
-    
-    currentUser.value = user?.id || null
-    profile.value = profileData
 
-    // Get follower and following counts in parallel
-    const [followerData, followingData, followsData] = await Promise.all([
-      // Get follower count
-      supabase.rpc('get_follower_count', { 
-        profile_id: profileData.id 
-      }),
-      
-      // Get following count
-      supabase.rpc('get_following_count', { 
-        profile_id: profileData.id 
-      }),
-      
-      // Check if current user follows this profile
-      currentUser.value ? supabase.rpc(
-        'check_if_follows',
-        { 
-          follower: currentUser.value, 
-          following: profileData.id 
-        }
-      ) : Promise.resolve({ data: false })
-    ])
+    // Initialize edit form data
+    editedProfileData.value = {
+      name: profile.value.name,
+      username: profile.value.username,
+      about: profile.value.about || '',
+      website: profile.value.website || '',
+      location: profile.value.location || ''
+    }
 
-    followerCount.value = followerData.data || 0
-    followingCount.value = followingData.data || 0
-    isFollowing.value = followsData.data || false
+    // Load related data after profile is set
+    if (profile.value) {
+      await Promise.all([
+        loadFollowers(),
+        loadFollowing(),
+        loadLists()
+      ])
+    }
   } catch (err: any) {
-    console.error('Error loading profile:', err)
-    error.value = err.message || 'Error loading profile'
+    console.error('Error loading profile:', err.message)
+    error.value = err.message || 'Failed to load profile'
   } finally {
-    isLoading.value = false
+    loading.value = false
   }
 }
 
-const toggleFollow = async () => {
-  if (!currentUser.value || !profile.value) return
-  
-  isLoading.value = true
-  error.value = ''
+// Load lists
+const loadLists = async () => {
+  const currentProfile = profile.value
+  if (!currentProfile) return
 
   try {
-    if (isFollowing.value) {
-      // Unfollow
-      const { error: unfollowError } = await supabase
-        .from('follows')
-        .delete()
-        .eq('follower_id', currentUser.value)
-        .eq('following_id', profile.value.id)
+    const { data, error } = await supabase
+      .from('lists')
+      .select(`
+        id,
+        title,
+        description,
+        category,
+        items,
+        created_at,
+        user_id
+      `)
+      .eq('user_id', currentProfile.id)
+      .order('created_at', { ascending: false })
 
-      if (unfollowError) throw unfollowError
-    } else {
-      // Follow
-      const { error: followError } = await supabase
-        .from('follows')
-        .insert({
-          follower_id: currentUser.value,
-          following_id: profile.value.id
-        })
+    if (error) throw error
+    lists.value = data || []
+  } catch (err) {
+    console.error('Error loading lists:', err)
+  }
+}
 
-      if (followError) throw followError
+// Load followers
+const loadFollowers = async () => {
+  if (!profile.value) return
+
+  try {
+    const { data, error } = await supabase
+      .from('follows')
+      .select(`
+        follower_id,
+        following_id,
+        follower:profiles!follows_follower_id_fkey (
+          id,
+          username,
+          name,
+          avatar_url
+        )
+      `)
+      .eq('following_id', profile.value.id)
+
+    if (error) throw error
+    
+    // Map the data to include profile information
+    followers.value = (data || []).map((item: FollowData) => ({
+      follower_id: item.follower_id,
+      following_id: item.following_id,
+      follower: {
+        ...item.follower,
+        followers_count: 0,
+        following_count: 0
+      },
+      following: profile.value
+    }))
+  } catch (err) {
+    console.error('Error loading followers:', err)
+  }
+}
+
+// Load following
+const loadFollowing = async () => {
+  if (!profile.value) return
+
+  try {
+    const { data, error } = await supabase
+      .from('follows')
+      .select(`
+        follower_id,
+        following_id,
+        following:profiles!follows_following_id_fkey (
+          id,
+          username,
+          name,
+          avatar_url
+        )
+      `)
+      .eq('follower_id', profile.value.id)
+
+    if (error) throw error
+
+    // Map the data to include profile information
+    following.value = (data || []).map((item: FollowData) => ({
+      follower_id: item.follower_id,
+      following_id: item.following_id,
+      follower: profile.value,
+      following: {
+        ...item.following,
+        followers_count: 0,
+        following_count: 0
+      }
+    }))
+  } catch (err) {
+    console.error('Error loading following:', err)
+  }
+}
+
+// Update profile
+const updateProfile = async (e: Event) => {
+  e.preventDefault()
+  const currentProfile = profile.value
+  if (!currentProfile) return
+  
+  try {
+    isLoading.value = true
+    error.value = ''
+    success.value = ''
+
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({
+        name: editedProfileData.value.name,
+        username: editedProfileData.value.username,
+        about: editedProfileData.value.about,
+        website: editedProfileData.value.website,
+        location: editedProfileData.value.location,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', currentProfile.id)
+
+    if (updateError) throw updateError
+
+    // Update local profile data
+    profile.value = {
+      ...currentProfile,
+      ...editedProfileData.value
     }
 
-    isFollowing.value = !isFollowing.value
-    followerCount.value += isFollowing.value ? 1 : -1
+    success.value = 'Profile updated successfully!'
+    showEditModal.value = false
   } catch (err: any) {
     error.value = err.message
   } finally {
@@ -256,253 +303,514 @@ const toggleFollow = async () => {
   }
 }
 
-const navigateToMessages = () => {
-  router.push('/messages')
+// Toggle follow status
+const toggleFollow = async () => {
+  if (!userStore.user || !profile.value) return
+  
+  try {
+    isLoading.value = true
+    
+    if (isFollowing.value) {
+      const { error } = await supabase
+        .from('follows')
+        .delete()
+        .eq('follower_id', userStore.user.id)
+        .eq('following_id', profile.value.id)
+
+      if (error) throw error
+    } else {
+      const { error } = await supabase
+        .from('follows')
+        .insert({
+          follower_id: userStore.user.id,
+          following_id: profile.value.id
+        })
+
+      if (error) throw error
+    }
+
+    // Reload followers and following lists
+    await Promise.all([
+      loadFollowers(),
+      loadFollowing()
+    ])
+  } catch (err) {
+    console.error('Error toggling follow:', err)
+  } finally {
+    isLoading.value = false
+  }
 }
 
-onMounted(async () => {
-  await loadProfile()
+// Navigation
+const navigateToProfile = (username: string) => {
+  router.push(`/@${username}`)
+}
+
+// Handle image error
+const handleImageError = (event: Event) => {
+  const target = event.target as HTMLImageElement
+  if (target) {
+    target.src = '/placeholder-cover.jpg'
+  }
+}
+
+// Watch for route changes
+watch(() => route.params.username, async (newUsername) => {
+  if (newUsername) {
+    await loadProfile()
+  }
 })
 
-// Watch for route changes to reload profile
-watch(() => route.params.username, async () => {
-  await loadProfile()
+onMounted(() => {
+  loadProfile()
 })
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50">
+  <div>
     <Header />
-    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-[51px]">
-      <!-- Error Message -->
-      <div v-if="error" class="mb-6 p-4 bg-red-50 text-red-600 rounded-lg">
-        {{ error }}
-      </div>
-
-      <div class="bg-white shadow rounded-lg">
-        <!-- Profile Info -->
-        <div class="p-8">
-          <!-- Avatar and Actions -->
-          <div class="flex items-start gap-8 mb-8">
-            <!-- Avatar -->
-            <div class="flex-shrink-0">
+    <div v-if="profile">
+      <!-- Profile Card -->
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div class="bg-white">
+          <div class="flex flex-col md:flex-row items-start gap-8 p-6">
+            <!-- Avatar Section -->
+            <div class="flex-shrink-0 mx-auto md:mx-0 mb-6 md:mb-0">
               <div class="relative group">
-                <div class="w-32 h-32 rounded-full border-4 border-white overflow-hidden">
-                  <img
-                    v-if="profile?.avatar_url"
-                    :src="profile.avatar_url"
-                    :alt="profile?.full_name || ''"
-                    class="w-full h-full object-cover"
-                  />
-                  <div v-else class="w-full h-full bg-gray-200 flex items-center justify-center">
-                    <span class="text-4xl text-gray-500 font-semibold">
-                      {{ profile?.full_name?.[0]?.toUpperCase() }}
-                    </span>
-                  </div>
-                </div>
-                
-                <!-- Edit Avatar Button -->
-                <template v-if="isOwnProfile && isEditing">
-                  <input
-                    type="file"
-                    id="avatar-upload"
-                    accept="image/*"
-                    class="hidden"
-                    @change="uploadAvatar"
-                  />
-                  <label
-                    for="avatar-upload"
-                    class="absolute inset-0 bg-black bg-opacity-40 rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer"
-                  >
-                    <div class="flex flex-col items-center text-white">
-                      <PhCamera :size="24" weight="bold" />
-                      <span class="text-xs mt-1">
-                        {{ isUploadingAvatar ? 'Uploading...' : 'Change Photo' }}
-                      </span>
-                    </div>
-                  </label>
-                </template>
+                <img
+                  :src="profile.avatar_url || '/placeholder-avatar.jpg'"
+                  alt="Profile"
+                  class="w-32 h-32 md:w-40 md:h-40 rounded-full object-cover border-2 border-gray-200"
+                />
+                <button
+                  v-if="isOwnProfile"
+                  @click="showEditModal = true"
+                  class="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                >
+                  <PhCamera class="w-8 h-8 text-white" />
+                </button>
               </div>
             </div>
 
-            <!-- User Info and Stats -->
-            <div class="flex-1">
-              <div class="flex justify-between items-start mb-4">
-                <!-- Name and Username -->
-                <div>
-                  <h1 class="text-2xl font-bold text-gray-900 mb-1">
-                    <template v-if="isEditing">
-                      <input
-                        v-model="editedProfile.full_name"
-                        type="text"
-                        class="w-full px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary"
-                        placeholder="Your full name"
-                      >
-                    </template>
-                    <template v-else>
-                      {{ profile?.full_name }}
-                    </template>
-                  </h1>
-                  <p class="text-gray-500">
-                    <template v-if="isEditing">
-                      <div class="flex items-center">
-                        <span class="text-gray-400">@</span>
-                        <input
-                          v-model="editedProfile.username"
-                          type="text"
-                          class="px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary"
-                          placeholder="username"
-                        >
-                      </div>
-                    </template>
-                    <template v-else>
-                      @{{ profile?.username }}
-                    </template>
-                  </p>
-                </div>
-
-                <!-- Action Buttons -->
+            <!-- Profile Info Section -->
+            <div class="flex-grow space-y-6">
+              <!-- Username and Edit Button Row -->
+              <div class="flex flex-col md:flex-row md:items-center gap-4">
+                <h1 class="text-2xl font-light">{{ profile.username }}</h1>
                 <div class="flex gap-2">
-                  <!-- Edit Profile Button (Only shown on own profile) -->
                   <template v-if="isOwnProfile">
                     <button
-                      v-show="!isEditing"
-                      @click="startEditing"
-                      class="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-                      title="Edit Profile"
+                      @click="showEditModal = true"
+                      class="px-4 py-1.5 border border-gray-300 rounded-md text-sm font-medium hover:bg-gray-50 w-full md:w-auto"
                     >
-                      <PhPencil :size="20" weight="bold" />
+                      Edit Profile
                     </button>
                   </template>
-
-                  <template v-if="isEditing">
+                  <template v-else>
                     <button
-                      @click="saveProfile"
-                      :disabled="isLoading"
-                      class="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
-                    >
-                      <PhCheck :size="20" weight="bold" />
-                      <span class="font-medium">{{ isLoading ? 'Saving...' : 'Save' }}</span>
-                    </button>
-                    
-                    <button
-                      @click="cancelEditing"
-                      class="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-                    >
-                      <PhX :size="20" weight="bold" />
-                      <span class="font-medium">Cancel</span>
-                    </button>
-                  </template>
-
-                  <!-- Follow and Message Buttons (Only shown on other profiles) -->
-                  <template v-if="!isOwnProfile">
-                    <button
+                      v-if="!isFollowing"
                       @click="toggleFollow"
+                      class="px-4 py-1.5 bg-blue-500 text-white rounded-md text-sm font-medium hover:bg-blue-600 w-full md:w-auto"
                       :disabled="isLoading"
-                      class="flex items-center gap-2 px-4 py-2 rounded-lg transition-colors"
-                      :class="isFollowing ? 
-                        'bg-gray-100 text-gray-700 hover:bg-gray-200' : 
-                        'bg-primary text-white hover:bg-primary/90'"
-                      :title="isFollowing ? 'Unfollow' : 'Follow'"
                     >
-                      <component 
-                        :is="isFollowing ? PhUserMinus : PhUserPlus"
-                        :size="20" 
-                        weight="bold" 
-                      />
+                      Follow
                     </button>
-
-                    <router-link
-                      :to="`/messages?user_id=${profile?.id}`"
-                      class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200"
+                    <button
+                      v-else
+                      @click="toggleFollow"
+                      class="px-4 py-1.5 border border-gray-300 rounded-md text-sm font-medium hover:bg-gray-50 w-full md:w-auto"
+                      :disabled="isLoading"
                     >
-                      Message
-                    </router-link>
+                      Following
+                    </button>
                   </template>
                 </div>
               </div>
 
-              <!-- User Stats -->
-              <div class="flex gap-6 mb-4">
-                <div class="text-center">
-                  <div class="text-lg font-bold text-gray-900">0</div>
-                  <div class="text-sm text-gray-600">Lists</div>
+              <!-- Stats Row -->
+              <div class="flex gap-8 text-sm">
+                <div class="text-center md:text-left">
+                  <span class="font-semibold">{{ lists.length }}</span>
+                  <span class="text-gray-900 ml-1">lists</span>
                 </div>
-                <div class="text-center">
-                  <div class="text-lg font-bold text-gray-900">0</div>
-                  <div class="text-sm text-gray-600">Liked Lists</div>
-                </div>
-                <div class="text-center">
-                  <div class="text-lg font-bold text-gray-900">{{ followerCount }}</div>
-                  <div class="text-sm text-gray-600">Followers</div>
-                </div>
-                <div class="text-center">
-                  <div class="text-lg font-bold text-gray-900">{{ followingCount }}</div>
-                  <div class="text-sm text-gray-600">Following</div>
-                </div>
+                <button @click="showFollowersModal = true" class="text-center md:text-left">
+                  <span class="font-semibold">{{ followerCount }}</span>
+                  <span class="text-gray-900 ml-1">followers</span>
+                </button>
+                <button @click="showFollowingModal = true" class="text-center md:text-left">
+                  <span class="font-semibold">{{ followingCount }}</span>
+                  <span class="text-gray-900 ml-1">following</span>
+                </button>
               </div>
-            </div>
-          </div>
-          
-          <!-- Bio & Details -->
-          <div class="space-y-4">
-            <div>
-              <template v-if="isEditing">
-                <textarea
-                  v-model="editedProfile.bio"
-                  rows="3"
-                  class="w-full px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary"
-                  placeholder="Write a bio..."
-                ></textarea>
-              </template>
-              <template v-else>
-                <p v-if="profile?.bio" class="text-gray-700">
-                  {{ profile.bio }}
-                </p>
-              </template>
-            </div>
-            
-            <div class="flex flex-wrap gap-4 text-sm text-gray-500">
-              <div class="flex items-center">
-                <span class="mr-2">📍</span>
-                <template v-if="isEditing">
-                  <input
-                    v-model="editedProfile.location"
-                    type="text"
-                    class="px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary"
-                    placeholder="Add location"
-                  >
-                </template>
-                <template v-else>
-                  <span v-if="profile?.location">
-                    {{ profile.location }}
-                  </span>
-                </template>
-              </div>
-              
-              <div class="flex items-center">
-                <span class="mr-2">🔗</span>
-                <template v-if="isEditing">
-                  <input
-                    v-model="editedProfile.website"
-                    type="url"
-                    class="px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary"
-                    placeholder="Add website"
-                  >
-                </template>
-                <a v-else-if="profile?.website" 
+
+              <!-- Name and Bio -->
+              <div class="space-y-2">
+                <div class="font-semibold text-gray-900">{{ profile.name }}</div>
+                <div class="text-gray-900 whitespace-pre-wrap text-sm">{{ profile.about || 'No bio yet.' }}</div>
+                <a
+                  v-if="profile.website"
                   :href="profile.website"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="flex items-center text-primary hover:text-primary/80"
-              >
-                🔗 {{ profile.website }}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-blue-900 hover:underline text-sm block"
+                >
+                  {{ profile.website }}
                 </a>
+                <div v-if="profile.location" class="flex items-center text-gray-500 text-sm">
+                  <PhMapPin class="w-4 h-4 mr-1" />
+                  {{ profile.location }}
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
-    </main>
+
+      <!-- Divider -->
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="border-t border-gray-200"></div>
+      </div>
+
+      <!-- Lists Section -->
+      <section class="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+        <div class="flex items-center justify-between mb-6">
+          <h2 class="text-2xl font-bold text-gray-900">Lists</h2>
+        </div>
+        
+        <div class="grid grid-cols-1 gap-6">
+          <div v-for="list in lists" :key="list.id" class="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow">
+            <div class="p-6">
+              <!-- User Info -->
+              <div class="flex items-center mb-4">
+                <img :src="profile.avatar_url || '/placeholder-avatar.jpg'" alt="User Avatar" class="w-10 h-10 rounded-full">
+                <div class="ml-3">
+                  <p class="font-medium text-gray-900">{{ profile.name }}</p>
+                  <p class="text-sm text-gray-600">@{{ profile.username }}</p>
+                </div>
+              </div>
+
+              <!-- List Info -->
+              <h2 class="text-xl font-bold text-gray-900 mb-2">{{ list.title }}</h2>
+              <p class="text-gray-600 mb-4 line-clamp-2">{{ list.description }}</p>
+
+              <!-- List Item Covers -->
+              <div class="flex space-x-2 mb-4 overflow-x-auto pb-2">
+                <div v-for="(item, index) in (list.items || []).slice(0, 4)" :key="index" class="flex-shrink-0">
+                  <img 
+                    :src="`https://image.tmdb.org/t/p/w200${item.poster_path}`"
+                    :alt="item.name"
+                    class="w-20 h-28 object-cover rounded-md"
+                    @error="handleImageError"
+                  >
+                </div>
+                <div v-if="list.items?.length > 4" class="flex-shrink-0 w-20 h-28 bg-gray-200 rounded-md flex items-center justify-center">
+                  <span class="text-gray-600 font-medium">+{{ list.items.length - 4 }}</span>
+                </div>
+              </div>
+
+              <!-- Category and Date -->
+              <div class="flex items-center justify-between text-sm text-gray-500">
+                <span class="inline-flex items-center px-2.5 rounded-l-md border border-r-0 border-gray-300 bg-gray-50 text-gray-500 text-xs font-medium">
+                  {{ list.category }}
+                </span>
+                <span>{{ new Date(list.created_at).toLocaleDateString() }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Empty State -->
+        <div v-if="!lists.length" class="text-center py-12">
+          <p class="text-gray-500">No lists created yet.</p>
+        </div>
+      </section>
+    </div>
+
+    <!-- Followers Modal -->
+    <TransitionRoot appear :show="showFollowersModal" as="template">
+      <Dialog as="div" @close="showFollowersModal = false" class="relative z-10">
+        <TransitionChild
+          as="template"
+          enter="duration-300 ease-out"
+          enter-from="opacity-0"
+          enter-to="opacity-100"
+          leave="duration-200 ease-in"
+          leave-from="opacity-100"
+          leave-to="opacity-0"
+        >
+          <div class="fixed inset-0 bg-black bg-opacity-25" />
+        </TransitionChild>
+
+        <div class="fixed inset-0 overflow-y-auto">
+          <div class="flex min-h-full items-center justify-center p-4 text-center">
+            <TransitionChild
+              as="template"
+              enter="duration-300 ease-out"
+              enter-from="opacity-0 scale-95"
+              enter-to="opacity-100 scale-100"
+              leave="duration-200 ease-in"
+              leave-from="opacity-100 scale-100"
+              leave-to="opacity-0 scale-95"
+            >
+              <DialogPanel class="w-full max-w-md transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all">
+                <DialogTitle as="h3" class="text-lg font-medium leading-6 text-gray-900 mb-4">
+                  Followers
+                </DialogTitle>
+                <div class="max-h-96 overflow-y-auto">
+                  <div v-if="followers.length === 0" class="text-center text-gray-500 py-4">
+                    No followers yet
+                  </div>
+                  <div v-else v-for="user in followers" :key="user.follower_id" 
+                    class="flex items-center justify-between py-3 hover:bg-gray-50 px-2 rounded-lg cursor-pointer"
+                    @click="navigateToProfile(user.follower.username)"
+                  >
+                    <div class="flex items-center gap-3">
+                      <img :src="user.follower.avatar_url || '/placeholder-avatar.jpg'" class="w-10 h-10 rounded-full" />
+                      <div>
+                        <div class="font-medium text-gray-900">{{ user.follower.name }}</div>
+                        <div class="text-sm text-gray-500">@{{ user.follower.username }}</div>
+                      </div>
+                    </div>
+                    <button 
+                      v-if="userStore.user?.id !== user.follower.id"
+                      @click.stop="toggleFollow"
+                      class="px-4 py-2 rounded-lg text-sm font-medium"
+                      :class="isFollowing ? 'bg-gray-100 text-gray-700' : 'bg-blue-500 text-white'"
+                    >
+                      {{ isFollowing ? 'Following' : 'Follow' }}
+                    </button>
+                  </div>
+                </div>
+              </DialogPanel>
+            </TransitionChild>
+          </div>
+        </div>
+      </Dialog>
+    </TransitionRoot>
+
+    <!-- Following Modal -->
+    <TransitionRoot appear :show="showFollowingModal" as="template">
+      <Dialog as="div" @close="showFollowingModal = false" class="relative z-10">
+        <TransitionChild
+          as="template"
+          enter="duration-300 ease-out"
+          enter-from="opacity-0"
+          enter-to="opacity-100"
+          leave="duration-200 ease-in"
+          leave-from="opacity-100"
+          leave-to="opacity-0"
+        >
+          <div class="fixed inset-0 bg-black bg-opacity-25" />
+        </TransitionChild>
+
+        <div class="fixed inset-0 overflow-y-auto">
+          <div class="flex min-h-full items-center justify-center p-4 text-center">
+            <TransitionChild
+              as="template"
+              enter="duration-300 ease-out"
+              enter-from="opacity-0 scale-95"
+              enter-to="opacity-100 scale-100"
+              leave="duration-200 ease-in"
+              leave-from="opacity-100 scale-100"
+              leave-to="opacity-0 scale-95"
+            >
+              <DialogPanel class="w-full max-w-md transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all">
+                <DialogTitle as="h3" class="text-lg font-medium leading-6 text-gray-900 mb-4">
+                  Following
+                </DialogTitle>
+                <div class="max-h-96 overflow-y-auto">
+                  <div v-if="following.length === 0" class="text-center text-gray-500 py-4">
+                    Not following anyone yet
+                  </div>
+                  <div v-else v-for="user in following" :key="user.following_id" 
+                    class="flex items-center justify-between py-3 hover:bg-gray-50 px-2 rounded-lg cursor-pointer"
+                    @click="navigateToProfile(user.following.username)"
+                  >
+                    <div class="flex items-center gap-3">
+                      <img :src="user.following.avatar_url || '/placeholder-avatar.jpg'" class="w-10 h-10 rounded-full" />
+                      <div>
+                        <div class="font-medium text-gray-900">{{ user.following.name }}</div>
+                        <div class="text-sm text-gray-500">@{{ user.following.username }}</div>
+                      </div>
+                    </div>
+                    <button 
+                      v-if="userStore.user?.id !== user.following.id"
+                      @click.stop="toggleFollow"
+                      class="px-4 py-2 rounded-lg text-sm font-medium"
+                      :class="isFollowing ? 'bg-gray-100 text-gray-700' : 'bg-blue-500 text-white'"
+                    >
+                      {{ isFollowing ? 'Following' : 'Follow' }}
+                    </button>
+                  </div>
+                </div>
+              </DialogPanel>
+            </TransitionChild>
+          </div>
+        </div>
+      </Dialog>
+    </TransitionRoot>
+
+    <!-- Edit Profile Modal -->
+    <TransitionRoot appear :show="showEditModal" as="template">
+      <Dialog as="div" @close="showEditModal = false" class="relative z-50">
+        <TransitionChild
+          as="template"
+          enter="duration-300 ease-out"
+          enter-from="opacity-0"
+          enter-to="opacity-100"
+          leave="duration-200 ease-in"
+          leave-from="opacity-100"
+          leave-to="opacity-0"
+        >
+          <div class="fixed inset-0 bg-black/25" />
+        </TransitionChild>
+
+        <div class="fixed inset-0 overflow-y-auto">
+          <div class="flex min-h-full items-center justify-center p-4 text-center">
+            <TransitionChild
+              as="template"
+              enter="duration-300 ease-out"
+              enter-from="opacity-0 scale-95"
+              enter-to="opacity-100 scale-100"
+              leave="duration-200 ease-in"
+              leave-from="opacity-100 scale-100"
+              leave-to="opacity-0 scale-95"
+            >
+              <DialogPanel class="w-full max-w-md transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all">
+                <DialogTitle as="div" class="flex items-center justify-between border-b border-gray-200 pb-4 mb-6">
+                  <h3 class="text-lg font-medium leading-6 text-gray-900">
+                    Edit Profile
+                  </h3>
+                  <button
+                    @click="showEditModal = false"
+                    class="text-gray-400 hover:text-gray-500"
+                  >
+                    <PhX class="w-5 h-5" />
+                  </button>
+                </DialogTitle>
+
+                <!-- Avatar Preview -->
+                <div class="flex justify-center mb-6">
+                  <div class="relative">
+                    <img
+                      :src="profile.avatar_url || '/placeholder-avatar.jpg'"
+                      alt="Profile"
+                      class="w-20 h-20 rounded-full object-cover border-2 border-gray-200"
+                    />
+                    <button
+                      @click="showEditModal = true"
+                      class="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-full opacity-0 hover:opacity-100 transition-opacity"
+                    >
+                      <PhCamera class="w-6 h-6 text-white" />
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Form -->
+                <form @submit.prevent="updateProfile" class="space-y-4">
+                  <!-- Success Message -->
+                  <div
+                    v-if="success"
+                    class="bg-green-50 text-green-600 px-4 py-2 rounded-md text-sm mb-4"
+                  >
+                    {{ success }}
+                  </div>
+
+                  <!-- Error Message -->
+                  <div
+                    v-if="error"
+                    class="bg-red-50 text-red-600 px-4 py-2 rounded-md text-sm mb-4"
+                  >
+                    {{ error }}
+                  </div>
+
+                  <!-- Name -->
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                      Name
+                    </label>
+                    <input
+                      v-model="editedProfileData.name"
+                      type="text"
+                      class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      :disabled="isLoading"
+                    />
+                  </div>
+
+                  <!-- Username -->
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                      Username
+                    </label>
+                    <div class="flex">
+                      <span class="inline-flex items-center px-2.5 rounded-l-md border border-r-0 border-gray-300 bg-gray-50 text-gray-500 text-sm">
+                        @
+                      </span>
+                      <input
+                        v-model="editedProfileData.username"
+                        type="text"
+                        class="flex-1 px-3 py-2 border border-gray-300 rounded-r-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        :disabled="isLoading"
+                      />
+                    </div>
+                  </div>
+
+                  <!-- Bio -->
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                      Bio
+                    </label>
+                    <textarea
+                      v-model="editedProfileData.about"
+                      rows="3"
+                      class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      :disabled="isLoading"
+                    ></textarea>
+                  </div>
+
+                  <!-- Website -->
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                      Website
+                    </label>
+                    <input
+                      v-model="editedProfileData.website"
+                      type="url"
+                      class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      :disabled="isLoading"
+                    />
+                  </div>
+
+                  <!-- Location -->
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                      Location
+                    </label>
+                    <input
+                      v-model="editedProfileData.location"
+                      type="text"
+                      class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      :disabled="isLoading"
+                    />
+                  </div>
+
+                  <!-- Submit Button -->
+                  <div class="mt-6">
+                    <button
+                      type="submit"
+                      class="w-full px-4 py-2 bg-blue-500 text-white rounded-md font-medium hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      :disabled="isLoading"
+                    >
+                      {{ isLoading ? 'Saving...' : 'Submit' }}
+                    </button>
+                  </div>
+                </form>
+              </DialogPanel>
+            </TransitionChild>
+          </div>
+        </div>
+      </Dialog>
+    </TransitionRoot>
+    <Footer />
   </div>
 </template>

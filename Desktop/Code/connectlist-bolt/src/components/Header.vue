@@ -1,225 +1,250 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { supabase } from '../lib/supabase'
-import { PhBell, PhEnvelope, PhUser, PhCaretDown, PhGear, PhSignOut, PhMagnifyingGlass, PhList, PhX, PhUsers, PhCheck, PhTrash, PhSpinner, PhChatCircleDots } from '@phosphor-icons/vue'
-import type { Database } from '../lib/supabase-types'
+import { contentService } from '../services/content'
 import { useRouter } from 'vue-router'
+import { 
+  PhBell, 
+  PhEnvelope, 
+  PhUser, 
+  PhCaretDown, 
+  PhGear, 
+  PhSignOut, 
+  PhMagnifyingGlass, 
+  PhList, 
+  PhX, 
+  PhUsers, 
+  PhCheck, 
+  PhTrash, 
+  PhSpinner, 
+  PhChatCircleDots,
+  PhFilmSlate,
+  PhTelevision,
+  PhBook,
+  PhGameController
+} from '@phosphor-icons/vue'
+import type { Database } from '../lib/supabase-types'
 import { useLocalStorage } from '@vueuse/core'
+
+const router = useRouter()
+
+// UI State
+const isSearchVisible = ref(false)
+const isMobileMenuOpen = ref(false)
+const isDropdownOpen = ref(false)
+const isNotificationsOpen = ref(false)
+
+// User State
+const userProfile = ref<any>(null)
+const userFullName = ref<string | null>(null)
+
+// Notifications State
+const notifications = ref<any[]>([])
+const unreadNotificationsCount = ref(0)
 
 // Search state
 const searchQuery = ref('')
 const isSearching = ref(false)
-const searchResults = ref<Database['public']['Tables']['profiles']['Row'][]>([])
+const activeTab = ref('users')
+const searchResults = ref({
+  users: [],
+  movies: [],
+  series: [],
+  books: [],
+  games: [],
+  people: []
+})
 const showSearchResults = ref(false)
 const searchDebounceTimeout = ref<number | null>(null)
-const searchCache = useLocalStorage<Record<string, { data: any[], timestamp: number }>>('search_cache', {})
-const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
+const loadingStates = ref({
+  users: false,
+  movies: false,
+  series: false,
+  books: false,
+  games: false,
+  people: false
+})
+
+// Messages state
+const unreadCount = ref(0)
+let messagesSubscription: any
+let notificationsSubscription: any
+
+// Load notifications
+const loadNotifications = async () => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+
+    const { data, error } = await supabase
+      .from('notifications')
+      .select(`
+        *,
+        sender:profiles!notifications_from_user_id_fkey (
+          id,
+          username,
+          name,
+          avatar_url
+        )
+      `)
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(20)
+
+    if (error) throw error
+    notifications.value = data || []
+    unreadNotificationsCount.value = data?.filter(n => !n.read).length || 0
+  } catch (err) {
+    console.error('Error loading notifications:', err)
+    notifications.value = []
+    unreadNotificationsCount.value = 0
+  }
+}
 
 // Search functions
+const searchUsers = async (query: string) => {
+  if (!query) {
+    searchResults.value.users = []
+    return
+  }
+
+  try {
+    const { data: users, error } = await supabase
+      .from('profiles')
+      .select('id, username, name, avatar_url')
+      .or(`username.ilike.%${query}%,name.ilike.%${query}%`)
+      .limit(5)
+
+    if (error) throw error
+
+    searchResults.value.users = users || []
+  } catch (error) {
+    console.error('Error searching users:', error)
+    searchResults.value.users = []
+  }
+}
+
 const performSearch = async () => {
   const query = searchQuery.value?.trim()
   if (!query) {
-    searchResults.value = []
+    searchResults.value = {
+      users: [],
+      movies: [],
+      series: [],
+      books: [],
+      games: [],
+      people: []
+    }
     showSearchResults.value = false
     return
   }
 
-  isSearching.value = true
-  try {
-    console.log('Searching for:', query)
-    
-    // First, let's check what profiles exist
-    const { data: allProfiles, error: profileError } = await supabase
-      .from('profiles')
-      .select('*')
-    console.log('All profiles:', allProfiles)
-    console.log('Profile error:', profileError)
-
-    // Now do the search with textSearch
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .or(`username.ilike.%${query}%,full_name.ilike.%${query}%`)
-      .limit(5)
-
-    console.log('Search results:', data)
-    console.log('Search error:', error)
-    
-    if (error) {
-      console.error('Search error:', error)
-      throw error
-    }
-
-    searchResults.value = data || []
-    showSearchResults.value = true
-  } catch (err) {
-    console.error('Search error:', err)
-    searchResults.value = []
-  } finally {
-    isSearching.value = false
-  }
-}
-
-// Clear old cache entries
-const cleanupCache = () => {
-  const now = Date.now()
-  const newCache: Record<string, { data: any[], timestamp: number }> = {}
-  
-  Object.entries(searchCache.value).forEach(([key, value]) => {
-    if (now - value.timestamp < CACHE_DURATION) {
-      newCache[key] = value
-    }
+  // Reset all results and set loading states
+  Object.keys(loadingStates.value).forEach(key => {
+    loadingStates.value[key] = true
   })
   
-  searchCache.value = newCache
-}
+  showSearchResults.value = true
 
-interface HighlightedText {
-  before: string
-  highlight: string
-  after: string
-}
+  try {
+    // Search all content types in parallel
+    const [
+      usersResult,
+      moviesResult,
+      seriesResult,
+      booksResult,
+      gamesResult,
+      peopleResult
+    ] = await Promise.all([
+      // Search users
+      searchUsers(query),
+      // Search other content types
+      contentService.search(query, 'movies'),
+      contentService.search(query, 'series'),
+      contentService.search(query, 'books'),
+      contentService.search(query, 'games'),
+      contentService.search(query, 'people')
+    ])
 
-const getHighlightedText = (text: string, query: string): HighlightedText => {
-  if (!query) {
-    return {
-      before: text,
-      highlight: '',
-      after: ''
+    // Update search results
+    searchResults.value = {
+      users: searchResults.value.users,
+      movies: moviesResult?.results || [],
+      series: seriesResult?.results || [],
+      books: booksResult?.results || [],
+      games: gamesResult?.results || [],
+      people: peopleResult?.results || []
     }
-  }
-
-  const normalizedText = text.toLowerCase()
-  const normalizedQuery = query.toLowerCase()
-  const index = normalizedText.indexOf(normalizedQuery)
-  
-  if (index === -1) {
-    return {
-      before: text,
-      highlight: '',
-      after: ''
-    }
-  }
-  
-  return {
-    before: text.slice(0, index),
-    highlight: text.slice(index, index + query.length),
-    after: text.slice(index + query.length)
+  } catch (err) {
+    console.error('Error performing search:', err)
+  } finally {
+    // Reset loading states
+    Object.keys(loadingStates.value).forEach(key => {
+      loadingStates.value[key] = false
+    })
   }
 }
 
-const handleSearch = () => {
-  // Clear previous timeout
+// Watch search query changes
+watch(searchQuery, (newQuery) => {
   if (searchDebounceTimeout.value) {
     clearTimeout(searchDebounceTimeout.value)
   }
 
-  const query = searchQuery.value?.trim()
-  showSearchResults.value = Boolean(query)
-
-  // Set new timeout
-  searchDebounceTimeout.value = setTimeout(() => {
-    performSearch()
-  }, 300) as unknown as number
-}
-
-const navigateToProfile = (username: string) => {
-  router.push(`/@${username.toLowerCase()}`)
-  searchQuery.value = ''
-  showSearchResults.value = false
-  isSearchVisible.value = false // Close mobile search bar
-}
-
-// Close search results when clicking outside
-const handleSearchClickOutside = (event: MouseEvent) => {
-  const target = event.target as HTMLElement
-  if (!target.closest('.search-container') && !target.closest('.search-input')) {
+  if (!newQuery?.trim()) {
+    searchResults.value = {
+      users: [],
+      movies: [],
+      series: [],
+      books: [],
+      games: [],
+      people: []
+    }
     showSearchResults.value = false
-  }
-}
-
-const userProfile = ref<Database['public']['Tables']['profiles']['Row'] | null>(null)
-const userFullName = ref<string | null>(null)
-const isDropdownOpen = ref(false)
-const isMobileMenuOpen = ref(false)
-const isSearchVisible = ref(false)
-const isNotificationsOpen = ref(false)
-const router = useRouter()
-
-// Mock notifications data - Replace with real data from Supabase
-const notifications = ref([
-  {
-    id: 1,
-    title: 'New follower',
-    message: 'John Doe started following you',
-    time: '5m ago',
-    read: false
-  },
-  {
-    id: 2,
-    title: 'List shared',
-    message: 'Jane Smith shared a list with you',
-    time: '1h ago',
-    read: false
-  },
-  {
-    id: 3,
-    title: 'List update',
-    message: 'Your list "Favorite Books" was updated',
-    time: '2h ago',
-    read: true
-  }
-])
-
-const unreadNotificationsCount = computed(() => {
-  return notifications.value.filter(n => !n.read).length
-})
-
-const unreadCount = ref(0)
-
-// Load unread messages count
-const loadUnreadCount = async () => {
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return
-
-  const { data, error } = await supabase
-    .rpc('get_unread_messages_count', {
-      user_id: user.id
-    })
-
-  if (error) {
-    console.error('Error loading unread count:', error)
     return
   }
 
-  unreadCount.value = data || 0
-}
-
-// Set up realtime subscription for messages
-let messagesSubscription
-
-onMounted(async () => {
-  await loadUnreadCount()
-
-  messagesSubscription = supabase
-    .channel('messages')
-    .on('postgres_changes', {
-      event: '*',
-      schema: 'public',
-      table: 'messages'
-    }, () => {
-      loadUnreadCount()
-    })
-    .subscribe()
+  showSearchResults.value = true
+  searchDebounceTimeout.value = setTimeout(() => {
+    performSearch()
+  }, 300)
 })
 
-onUnmounted(() => {
-  if (messagesSubscription) {
-    supabase.removeChannel(messagesSubscription)
+const handleSearch = () => {
+  if (searchDebounceTimeout.value) {
+    clearTimeout(searchDebounceTimeout.value)
+  }
+  searchDebounceTimeout.value = setTimeout(performSearch, 300)
+}
+
+const getResultCount = computed(() => {
+  return {
+    users: searchResults.value.users.length,
+    movies: searchResults.value.movies.length,
+    series: searchResults.value.series.length,
+    books: searchResults.value.books.length,
+    games: searchResults.value.games.length,
+    people: searchResults.value.people.length
   }
 })
 
-// Close dropdowns when clicking outside
+const getTotalResults = computed(() => {
+  return Object.values(getResultCount.value).reduce((a, b) => a + b, 0)
+})
+
+// Navigation functions
+const navigateToProfile = (username: string) => {
+  router.push(`/@${username}`)
+  searchQuery.value = ''
+  showSearchResults.value = false
+  isSearchVisible.value = false
+}
+
+const navigateToMessages = () => {
+  router.push('/messages')
+}
+
+// Handle clicks outside
 const handleClickOutside = (event: MouseEvent) => {
   const target = event.target as HTMLElement
   if (!target.closest('.profile-dropdown') && !target.closest('.notifications-dropdown')) {
@@ -228,77 +253,123 @@ const handleClickOutside = (event: MouseEvent) => {
   }
 }
 
-onMounted(() => {
-  document.addEventListener('click', handleClickOutside)
-  document.addEventListener('click', handleSearchClickOutside)
-  cleanupCache() // Clean old cache entries on mount
-})
-
-onUnmounted(() => {
-  document.removeEventListener('click', handleClickOutside)
-  document.removeEventListener('click', handleSearchClickOutside)
-  if (searchDebounceTimeout.value) {
-    clearTimeout(searchDebounceTimeout.value)
-  }
-})
-
-const markNotificationAsRead = (notificationId: number) => {
-  const notification = notifications.value.find(n => n.id === notificationId)
-  if (notification) {
-    notification.read = true
+const handleSearchClickOutside = (event: MouseEvent) => {
+  const searchContainer = document.querySelector('.search-container')
+  if (searchContainer && !searchContainer.contains(event.target as Node) && !searchQuery.value?.trim()) {
+    showSearchResults.value = false
   }
 }
 
-const deleteNotification = (notificationId: number) => {
-  notifications.value = notifications.value.filter(n => n.id !== notificationId)
-}
-
-const markAllNotificationsAsRead = () => {
-  notifications.value.forEach(n => n.read = true)
-}
-
-const navigateToMessages = () => {
-  router.push('/messages')
-}
-
-const handleLogout = async () => {
-  const { error } = await supabase.auth.signOut()
-  if (!error) {
+// Auth functions
+async function handleLogout() {
+  try {
+    const { error } = await supabase.auth.signOut()
+    if (error) throw error
     router.push('/login')
+  } catch (err) {
+    console.error('Error logging out:', err)
   }
 }
 
+// Lifecycle hooks
 onMounted(async () => {
   const { data: { user } } = await supabase.auth.getUser()
   
   if (user) {
-    // Get user metadata for full name
     userFullName.value = user.user_metadata.full_name
 
-    // Get profile data
     const { data: profile } = await supabase
       .from('profiles')
-      .select('id, username, full_name, role')
+      .select('*')
       .eq('id', user.id)
       .single()
 
     if (profile) {
-      userProfile.value = {
-        id: profile.id,
-        username: profile.username,
-        full_name: profile.full_name,
-        role: profile.role,
-        avatar_url: null,
-        website: null,
-        location: null,
-        bio: null,
-        referral_code: '',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }
+      userProfile.value = profile
     }
+
+    // Load initial data
+    await Promise.all([
+      loadNotifications(),
+      loadUnreadCount()
+    ])
+
+    // Set up subscriptions
+    notificationsSubscription = supabase
+      .channel('notifications')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${user.id}`
+        },
+        () => {
+          loadNotifications()
+        }
+      )
+      .subscribe()
+
+    messagesSubscription = supabase
+      .channel('messages')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'messages',
+          filter: `recipient_id=eq.${user.id}`
+        },
+        () => {
+          loadUnreadCount()
+        }
+      )
+      .subscribe()
+  }
+
+  // Add event listeners
+  document.addEventListener('click', handleClickOutside)
+  document.addEventListener('click', handleSearchClickOutside)
+})
+
+onUnmounted(() => {
+  // Remove event listeners
+  document.removeEventListener('click', handleClickOutside)
+  document.removeEventListener('click', handleSearchClickOutside)
+
+  // Clear timeouts
+  if (searchDebounceTimeout.value) {
+    clearTimeout(searchDebounceTimeout.value)
+  }
+
+  // Clean up subscriptions
+  if (notificationsSubscription) {
+    supabase.removeChannel(notificationsSubscription)
+  }
+  if (messagesSubscription) {
+    supabase.removeChannel(messagesSubscription)
   }
 })
+
+// Load unread messages count
+const loadUnreadCount = async () => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+
+    const { count, error } = await supabase
+      .from('messages')
+      .select('*', { count: 'exact', head: true })
+      .eq('receiver_id', user.id)
+      .eq('read', false)
+
+    if (error) throw error
+    unreadCount.value = count || 0
+  } catch (error) {
+    console.error('Error loading unread count:', error)
+  }
+}
 </script>
 
 <template>
@@ -339,61 +410,188 @@ onMounted(async () => {
               placeholder="Search anything"
             >
             
-            <!-- Search Results Popup -->
+            <!-- Search Results Dropdown -->
             <div 
-              v-if="showSearchResults && searchQuery?.trim()" 
-              class="absolute top-full left-0 right-0 mt-2 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden z-50"
+              v-if="showSearchResults && searchQuery" 
+              class="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 z-50"
             >
-              <!-- Loading State -->
-              <div v-if="isSearching" class="p-4 text-center text-gray-500">
-                <PhSpinner :size="24" weight="bold" class="animate-spin mx-auto mb-2" />
-                <p class="text-sm">Searching...</p>
+              <!-- Tabs -->
+              <div class="flex border-b border-gray-200">
+                <button
+                  v-for="(count, tab) in getResultCount"
+                  :key="tab"
+                  @click="activeTab = tab"
+                  class="flex-1 px-4 py-2 text-sm font-medium"
+                  :class="{
+                    'text-primary border-b-2 border-primary': activeTab === tab,
+                    'text-gray-500 hover:text-gray-700': activeTab !== tab
+                  }"
+                >
+                  {{ tab.charAt(0).toUpperCase() + tab.slice(1) }}
+                  <span class="ml-1 text-gray-400">({{ count }})</span>
+                </button>
               </div>
 
               <!-- Results -->
-              <template v-else>
-                <div class="p-2 border-b border-gray-200">
-                  <h3 class="text-xs font-medium text-gray-500 uppercase">Users</h3>
-                </div>
-                
-                <!-- No Results Message -->
-                <div v-if="searchResults.length === 0" class="p-4 text-center text-gray-500">
-                  <p class="text-sm">No users found</p>
+              <div class="max-h-96 overflow-y-auto">
+                <!-- Loading State -->
+                <div v-if="Object.values(loadingStates).some(state => state)" class="p-4 text-center">
+                  <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                  <p class="mt-2 text-sm text-gray-500">Searching...</p>
                 </div>
 
-                <!-- User Results -->
-                <div v-else class="max-h-[300px] overflow-y-auto">
-                  <button
-                    v-for="user in searchResults"
-                    :key="user.id"
-                    @click.prevent="navigateToProfile(user.username)"
-                    class="w-full p-3 flex items-center gap-3 hover:bg-gray-50 transition-colors"
-                  >
-                    <!-- User Avatar -->
-                    <div v-if="user.avatar_url" class="w-10 h-10 rounded-full">
-                      <img
+                <!-- Content -->
+                <div v-else>
+                  <!-- Users Tab -->
+                  <div v-if="activeTab === 'users'" class="p-2">
+                    <div v-if="searchResults.users.length === 0" class="p-4 text-center text-gray-500">
+                      No users found
+                    </div>
+                    <div
+                      v-else
+                      v-for="user in searchResults.users"
+                      :key="user.id"
+                      @click="navigateToProfile(user.username)"
+                      class="flex items-center p-2 hover:bg-gray-50 cursor-pointer rounded-lg"
+                    >
+                      <!-- User result content -->
+                      <img 
                         v-if="user.avatar_url"
                         :src="user.avatar_url"
                         :alt="user.full_name || user.username"
-                        class="w-full h-full object-cover rounded-full"
+                        class="w-10 h-10 rounded-full"
                       />
-                    </div>
-                    <div v-else class="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
-                      <PhUser :size="20" weight="bold" class="text-gray-500" />
-                    </div>
-                    
-                    <!-- User Info -->
-                    <div class="text-left">
-                      <div class="font-medium text-gray-900">
-                        {{ user.full_name || user.username }}
+                      <div v-else class="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
+                        <PhUser :size="20" weight="bold" class="text-gray-500" />
                       </div>
-                      <div v-if="user.full_name" class="text-sm text-gray-500">
-                        @{{ user.username }}
+                      <div class="ml-3">
+                        <p class="text-sm font-medium text-gray-900">{{ user.full_name }}</p>
+                        <p class="text-sm text-gray-500">@{{ user.username }}</p>
                       </div>
                     </div>
-                  </button>
+                  </div>
+
+                  <!-- Movies Tab -->
+                  <div v-if="activeTab === 'movies'" class="p-2">
+                    <div
+                      v-for="movie in searchResults.movies"
+                      :key="movie.id"
+                      @click="router.push(`/movies/${movie.id}`)"
+                      class="flex items-center p-2 hover:bg-gray-50 rounded-lg cursor-pointer"
+                    >
+                      <img 
+                        v-if="movie.poster_path"
+                        :src="`https://image.tmdb.org/t/p/w92${movie.poster_path}`"
+                        :alt="movie.title"
+                        class="w-12 h-16 object-cover rounded"
+                      />
+                      <div v-else class="w-12 h-16 bg-gray-200 rounded flex items-center justify-center">
+                        <PhFilmSlate :size="24" weight="bold" class="text-gray-500" />
+                      </div>
+                      <div class="ml-3">
+                        <p class="font-medium">{{ movie.title }}</p>
+                        <p class="text-sm text-gray-500">{{ movie.release_date }}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Series Tab -->
+                  <div v-if="activeTab === 'series'" class="p-2">
+                    <div
+                      v-for="series in searchResults.series"
+                      :key="series.id"
+                      @click="router.push(`/series/${series.id}`)"
+                      class="flex items-center p-2 hover:bg-gray-50 rounded-lg cursor-pointer"
+                    >
+                      <img 
+                        v-if="series.poster_path"
+                        :src="`https://image.tmdb.org/t/p/w92${series.poster_path}`"
+                        :alt="series.name"
+                        class="w-12 h-16 object-cover rounded"
+                      />
+                      <div v-else class="w-12 h-16 bg-gray-200 rounded flex items-center justify-center">
+                        <PhTelevision :size="24" weight="bold" class="text-gray-500" />
+                      </div>
+                      <div class="ml-3">
+                        <p class="font-medium">{{ series.name }}</p>
+                        <p class="text-sm text-gray-500">{{ series.first_air_date }}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Books Tab -->
+                  <div v-if="activeTab === 'books'" class="p-2">
+                    <div
+                      v-for="book in searchResults.books"
+                      :key="book.id"
+                      @click="router.push(`/books/${book.id}`)"
+                      class="flex items-center p-2 hover:bg-gray-50 rounded-lg cursor-pointer"
+                    >
+                      <img 
+                        v-if="book.volumeInfo.imageLinks?.thumbnail"
+                        :src="book.volumeInfo.imageLinks.thumbnail"
+                        :alt="book.volumeInfo.title"
+                        class="w-12 h-16 object-cover rounded"
+                      />
+                      <div v-else class="w-12 h-16 bg-gray-200 rounded flex items-center justify-center">
+                        <PhBook :size="24" weight="bold" class="text-gray-500" />
+                      </div>
+                      <div class="ml-3">
+                        <p class="font-medium">{{ book.volumeInfo.title }}</p>
+                        <p class="text-sm text-gray-500">{{ book.volumeInfo.authors?.join(', ') }}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Games Tab -->
+                  <div v-if="activeTab === 'games'" class="p-2">
+                    <div
+                      v-for="game in searchResults.games"
+                      :key="game.id"
+                      @click="router.push(`/games/${game.id}`)"
+                      class="flex items-center p-2 hover:bg-gray-50 rounded-lg cursor-pointer"
+                    >
+                      <img 
+                        v-if="game.background_image"
+                        :src="game.background_image"
+                        :alt="game.name"
+                        class="w-12 h-16 object-cover rounded"
+                      />
+                      <div v-else class="w-12 h-16 bg-gray-200 rounded flex items-center justify-center">
+                        <PhGameController :size="24" weight="bold" class="text-gray-500" />
+                      </div>
+                      <div class="ml-3">
+                        <p class="font-medium">{{ game.name }}</p>
+                        <p class="text-sm text-gray-500">{{ new Date(game.released).getFullYear() }}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- People Tab -->
+                  <div v-if="activeTab === 'people'" class="p-2">
+                    <div
+                      v-for="person in searchResults.people"
+                      :key="person.id"
+                      @click="router.push(`/people/${person.id}`)"
+                      class="flex items-center p-2 hover:bg-gray-50 rounded-lg cursor-pointer"
+                    >
+                      <img 
+                        v-if="person.profile_path"
+                        :src="`https://image.tmdb.org/t/p/w92${person.profile_path}`"
+                        :alt="person.name"
+                        class="w-10 h-10 rounded-full"
+                      />
+                      <div v-else class="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
+                        <PhUser :size="20" weight="bold" class="text-gray-500" />
+                      </div>
+                      <div class="ml-3">
+                        <p class="font-medium">{{ person.name }}</p>
+                        <p class="text-sm text-gray-500">{{ person.known_for_department }}</p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              </template>
+              </div>
             </div>
           </div>
         </div>
@@ -486,14 +684,14 @@ onMounted(async () => {
           <!-- Messages -->
           <router-link 
             to="/messages" 
-            class="relative flex items-center px-3 py-2 text-gray-700 rounded-lg hover:bg-gray-100"
+            class="relative p-2 text-gray-500 hover:text-primary rounded-full hover:bg-gray-100"
+            title="Messages"
           >
-            <PhChatCircleDots :size="20" weight="bold" class="mr-3" />
+            <PhChatCircleDots :size="24" weight="bold" />
             <span v-if="unreadCount > 0" 
               class="absolute -top-1 -right-1 flex items-center justify-center w-5 h-5 text-xs text-white bg-red-500 rounded-full">
               {{ unreadCount }}
             </span>
-            Messages
           </router-link>
 
           <!-- Profile dropdown -->
@@ -529,7 +727,8 @@ onMounted(async () => {
             
             <!-- Dropdown Menu -->
             <div v-if="isDropdownOpen" 
-              class="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg py-1 z-50 border border-gray-200">
+              class="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-50"
+            >
               <router-link 
                 v-if="userProfile?.role === 'admin'"
                 to="/admin" 
@@ -551,7 +750,7 @@ onMounted(async () => {
                 Settings
               </router-link>
               <button @click="handleLogout"
-                class="flex items-center w-full px-4 py-2 text-red-600 hover:bg-gray-100">
+                class="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                 <PhSignOut :size="16" weight="bold" class="mr-2" />
                 Log out
               </button>
@@ -612,14 +811,14 @@ onMounted(async () => {
               </div>
               
               <!-- No Results Message -->
-              <div v-if="searchResults.length === 0" class="p-4 text-center text-gray-500">
+              <div v-if="searchResults.users.length === 0" class="p-4 text-center text-gray-500">
                 <p class="text-sm">No users found</p>
               </div>
 
               <!-- User Results -->
               <div v-else class="max-h-[300px] overflow-y-auto">
                 <button
-                  v-for="user in searchResults"
+                  v-for="user in searchResults.users"
                   :key="user.id"
                   @click.prevent="navigateToProfile(user.username)"
                   class="w-full p-3 flex items-center gap-3 hover:bg-gray-50 transition-colors"
