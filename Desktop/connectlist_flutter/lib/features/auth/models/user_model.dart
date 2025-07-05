@@ -4,6 +4,9 @@ class UserModel {
   final String? fullName;
   final String? bio;
   final String? avatarUrl;
+  final String? website;
+  final String? location;
+  final String? phoneNumber;
   final DateTime createdAt;
   final DateTime? updatedAt;
   final int? followersCount;
@@ -16,6 +19,9 @@ class UserModel {
     this.fullName,
     this.bio,
     this.avatarUrl,
+    this.website,
+    this.location,
+    this.phoneNumber,
     required this.createdAt,
     this.updatedAt,
     this.followersCount,
@@ -30,6 +36,9 @@ class UserModel {
       fullName: json['full_name'] as String?,
       bio: json['bio'] as String?,
       avatarUrl: json['avatar_url'] as String?,
+      website: json['website'] as String?,
+      location: json['location'] as String?,
+      phoneNumber: json['phone_number'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: json['updated_at'] != null
           ? DateTime.parse(json['updated_at'] as String)
@@ -47,6 +56,9 @@ class UserModel {
       'full_name': fullName,
       'bio': bio,
       'avatar_url': avatarUrl,
+      'website': website,
+      'location': location,
+      'phone_number': phoneNumber,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt?.toIso8601String(),
       'followers_count': followersCount,
@@ -61,6 +73,9 @@ class UserModel {
     String? fullName,
     String? bio,
     String? avatarUrl,
+    String? website,
+    String? location,
+    String? phoneNumber,
     DateTime? createdAt,
     DateTime? updatedAt,
     int? followersCount,
@@ -73,6 +88,9 @@ class UserModel {
       fullName: fullName ?? this.fullName,
       bio: bio ?? this.bio,
       avatarUrl: avatarUrl ?? this.avatarUrl,
+      website: website ?? this.website,
+      location: location ?? this.location,
+      phoneNumber: phoneNumber ?? this.phoneNumber,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       followersCount: followersCount ?? this.followersCount,

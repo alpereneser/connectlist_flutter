@@ -78,7 +78,8 @@ class _NotificationSettingsPageState extends ConsumerState<NotificationSettingsP
         'tips_and_tutorials': _tipsAndTutorials,
       };
 
-      await ref.read(settings.updateNotificationSettingsProvider(settingsData).future);
+      final notifier = ref.read(settings.notificationSettingsNotifierProvider.notifier);
+      await notifier.updateNotificationSettings(settingsData);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -91,7 +92,7 @@ class _NotificationSettingsPageState extends ConsumerState<NotificationSettingsP
                   size: 20,
                 ),
                 const SizedBox(width: 12),
-                const Text('Bildirim ayarları güncellendi'),
+                const Text('Notification settings updated successfully'),
               ],
             ),
             backgroundColor: Colors.green.shade600,

@@ -55,7 +55,7 @@ class FollowersModal extends ConsumerWidget {
                 ),
                 Expanded(
                   child: Text(
-                    'Takipçiler',
+                    'Followers',
                     style: GoogleFonts.inter(
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
@@ -85,7 +85,7 @@ class FollowersModal extends ConsumerWidget {
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          'Henüz takipçi yok',
+                          'No followers yet',
                           style: GoogleFonts.inter(
                             fontSize: 16,
                             color: Colors.grey.shade600,
@@ -118,7 +118,7 @@ class FollowersModal extends ConsumerWidget {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Takipçiler yüklenemedi',
+                      'Failed to load followers',
                       style: GoogleFonts.inter(
                         fontSize: 16,
                         color: Colors.grey.shade600,

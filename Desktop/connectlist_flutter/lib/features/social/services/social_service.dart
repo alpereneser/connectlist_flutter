@@ -4,10 +4,9 @@ import '../../auth/providers/auth_provider.dart';
 import '../../auth/models/user_model.dart';
 
 class SocialService {
-  final SupabaseClient _supabase;
-  final Ref _ref;
+  final SupabaseClient _supabase = Supabase.instance.client;
 
-  SocialService(this._supabase, this._ref);
+  SocialService();
 
   // FOLLOW/UNFOLLOW SYSTEM
   
@@ -197,6 +196,40 @@ class SocialService {
 
     } catch (e) {
       throw Exception('Failed to unlike list: $e');
+    }
+  }
+
+  /// Get user's liked lists
+  Future<List<Map<String, dynamic>>> getUserLikedLists(String userId, {int limit = 50}) async {
+    try {
+      final response = await _supabase
+          .from('list_likes')
+          .select('''
+            created_at,
+            lists!list_likes_list_id_fkey(
+              id,
+              title,
+              description,
+              category,
+              image_url,
+              created_at,
+              likes_count,
+              comments_count,
+              creator_profile:users_profiles!lists_created_by_fkey(
+                id,
+                username,
+                full_name,
+                avatar_url
+              )
+            )
+          ''')
+          .eq('user_id', userId)
+          .order('created_at', ascending: false)
+          .limit(limit);
+
+      return response.map((json) => json['lists'] as Map<String, dynamic>).toList();
+    } catch (e) {
+      throw Exception('Failed to get liked lists: $e');
     }
   }
 
@@ -511,6 +544,5 @@ class SocialService {
 
 // Provider for social service
 final socialServiceProvider = Provider<SocialService>((ref) {
-  final supabase = ref.read(supabaseProvider);
-  return SocialService(supabase, ref);
+  return SocialService();
 });

@@ -211,7 +211,7 @@ class _HomePageState extends ConsumerState<HomePage> {
               Expanded(
                 child: Consumer(
                   builder: (context, ref, child) {
-                    final listsAsync = ref.watch(userListsProvider(null));
+                    final listsAsync = ref.watch(filteredListsProvider((userId: null, categoryIndex: _selectedCategoryIndex)));
                     
                     return listsAsync.when(
                       data: (lists) {

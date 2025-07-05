@@ -175,6 +175,95 @@ final userListsProvider = StreamProvider.family<List<Map<String, dynamic>>, Stri
   return controller.stream;
 });
 
+final filteredListsProvider = StreamProvider.family<List<Map<String, dynamic>>, ({String? userId, int categoryIndex})>((ref, params) {
+  final supabase = ref.read(supabaseClientProvider);
+  
+  // Create a stream controller
+  final controller = StreamController<List<Map<String, dynamic>>>();
+  
+  // Function to fetch data
+  Future<void> fetchData() async {
+    try {
+      var query = supabase
+          .from('lists')
+          .select('''
+            *, 
+            users_profiles!creator_id(username, avatar_url), 
+            categories!inner(name, display_name),
+            likes_count,
+            comments_count,
+            shares_count,
+            views_count
+          ''');
+      
+      if (params.userId != null) {
+        query = query.eq('creator_id', params.userId!);
+      }
+      
+      // Filter by category if not "All Lists" (index 0)
+      if (params.categoryIndex > 0) {
+        final categoryName = _getCategoryNameFromIndex(params.categoryIndex);
+        if (categoryName != null) {
+          query = query.eq('categories.name', categoryName);
+        }
+      }
+      
+      final data = await query.order('created_at', ascending: false);
+      controller.add(List<Map<String, dynamic>>.from(data));
+    } catch (e) {
+      print('Error fetching filtered lists: $e');
+      controller.add([]);
+    }
+  }
+  
+  // Initial fetch
+  fetchData();
+  
+  // Set up realtime subscription
+  final channel = supabase.channel('filtered_lists_changes_${params.userId ?? 'all'}_${params.categoryIndex}').onPostgresChanges(
+    event: PostgresChangeEvent.all,
+    schema: 'public',
+    table: 'lists',
+    filter: params.userId != null ? PostgresChangeFilter(
+      type: PostgresChangeFilterType.eq,
+      column: 'creator_id',
+      value: params.userId!,
+    ) : null,
+    callback: (payload) {
+      print('Realtime event: ${payload.eventType} for user: ${params.userId}, category: ${params.categoryIndex}');
+      // Refetch data on any change
+      fetchData();
+    },
+  );
+  
+  channel.subscribe();
+  
+  // Clean up when provider is disposed
+  ref.onDispose(() {
+    channel.unsubscribe();
+    controller.close();
+  });
+  
+  return controller.stream;
+});
+
+String? _getCategoryNameFromIndex(int index) {
+  // Map category index to actual category names in the database
+  // SubHeader categories mapping:
+  final categoryMapping = {
+    1: 'places',    // Place Lists
+    2: 'movies',    // Movie Lists
+    3: 'books',     // Book Lists
+    4: 'tv_shows',  // TV Show Lists
+    5: 'videos',    // Video Lists (if exists in DB)
+    6: 'music',     // Music Lists (if exists in DB)
+    7: 'games',     // Game Lists
+    8: 'people',    // Person Lists (if exists in DB)
+    9: 'poetry',    // Poem Lists (if exists in DB)
+  };
+  return categoryMapping[index];
+}
+
 final listDetailsProvider = FutureProvider.family<Map<String, dynamic>?, String>((ref, listId) async {
   final supabase = ref.read(supabaseClientProvider);
   

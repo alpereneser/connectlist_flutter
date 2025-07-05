@@ -47,7 +47,7 @@ class _HelpSupportPageState extends ConsumerState<HelpSupportPage> {
         _messageController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Lütfen tüm alanları doldurun'),
+          content: const Text('Please fill in all required fields'),
           backgroundColor: Colors.orange.shade600,
         ),
       );
@@ -85,7 +85,7 @@ class _HelpSupportPageState extends ConsumerState<HelpSupportPage> {
                   size: 20,
                 ),
                 const SizedBox(width: 12),
-                const Text('Destek talebiniz başarıyla gönderildi'),
+                const Text('Support ticket submitted successfully'),
               ],
             ),
             backgroundColor: Colors.green.shade600,
@@ -97,7 +97,7 @@ class _HelpSupportPageState extends ConsumerState<HelpSupportPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Hata: ${e.toString()}'),
+            content: Text('Error: ${e.toString()}'),
             backgroundColor: Colors.red.shade600,
           ),
         );
@@ -137,11 +137,11 @@ class _HelpSupportPageState extends ConsumerState<HelpSupportPage> {
                   size: 24,
                 ),
                 const SizedBox(width: 12),
-                const Text('Hesap Silme Talebi Alındı'),
+                const Text('Account Deletion Request Received'),
               ],
             ),
             content: const Text(
-              'Hesap silme talebiniz alınmıştır. Hesabınız 30 gün sonra kalıcı olarak silinecektir. Bu süre içinde giriş yaparak işlemi iptal edebilirsiniz.',
+              'Your account deletion request has been received. Your account will be permanently deleted after 30 days. You can cancel this request by logging in during this period.',
               style: TextStyle(height: 1.4),
             ),
             actions: [
@@ -153,7 +153,7 @@ class _HelpSupportPageState extends ConsumerState<HelpSupportPage> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.orange.shade600,
                 ),
-                child: const Text('Tamam'),
+                child: const Text('OK'),
               ),
             ],
           ),
@@ -163,7 +163,7 @@ class _HelpSupportPageState extends ConsumerState<HelpSupportPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Hata: ${e.toString()}'),
+            content: Text('Error: ${e.toString()}'),
             backgroundColor: Colors.red.shade600,
           ),
         );
@@ -187,7 +187,7 @@ class _HelpSupportPageState extends ConsumerState<HelpSupportPage> {
               size: 24,
             ),
             const SizedBox(width: 12),
-            const Text('Hesap Silme'),
+            const Text('Delete Account'),
           ],
         ),
         content: Column(
@@ -195,20 +195,20 @@ class _HelpSupportPageState extends ConsumerState<HelpSupportPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Hesabınızı silmek istediğinizden emin misiniz?',
+              'Are you sure you want to delete your account?',
               style: TextStyle(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 12),
             const Text(
-              '• Tüm listeleriniz silinecek\n'
-              '• Profil bilgileriniz silinecek\n'
-              '• Bu işlem geri alınamaz\n'
-              '• 30 gün sonra kalıcı olarak silinecek',
+              '• All your lists will be deleted\n'
+              '• Your profile information will be deleted\n'
+              '• This action cannot be undone\n'
+              '• Permanently deleted after 30 days',
               style: TextStyle(height: 1.4),
             ),
             const SizedBox(height: 16),
             const Text(
-              'Silme sebebinizi belirtebilirsiniz (isteğe bağlı):',
+              'You can specify the reason for deletion (optional):',
               style: TextStyle(fontWeight: FontWeight.w500),
             ),
             const SizedBox(height: 8),
@@ -216,7 +216,7 @@ class _HelpSupportPageState extends ConsumerState<HelpSupportPage> {
               controller: _deletionReasonController,
               maxLines: 3,
               decoration: InputDecoration(
-                hintText: 'Hesabımı neden silmek istiyorum...',
+                hintText: 'Why I want to delete my account...',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
@@ -228,7 +228,7 @@ class _HelpSupportPageState extends ConsumerState<HelpSupportPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('İptal'),
+            child: const Text('Cancel'),
           ),
           ElevatedButton(
             onPressed: () => Navigator.of(context).pop(true),
@@ -236,7 +236,7 @@ class _HelpSupportPageState extends ConsumerState<HelpSupportPage> {
               backgroundColor: Colors.red.shade600,
               foregroundColor: Colors.white,
             ),
-            child: const Text('Hesabımı Sil'),
+            child: const Text('Delete My Account'),
           ),
         ],
       ),
@@ -251,7 +251,7 @@ class _HelpSupportPageState extends ConsumerState<HelpSupportPage> {
         backgroundColor: Colors.white,
         elevation: 0,
         title: Text(
-          'Yardım ve Destek',
+          'Help & Support',
           style: GoogleFonts.inter(
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -273,24 +273,24 @@ class _HelpSupportPageState extends ConsumerState<HelpSupportPage> {
           children: [
             // FAQ Section
             _buildSection(
-              'Sık Sorulan Sorular',
+              'Frequently Asked Questions',
               PhosphorIcons.question(),
               [
                 _buildFAQItem(
-                  'Liste nasıl oluştururum?',
-                  'Ana sayfada + butonuna tıklayarak kategori seçin ve öğeleri ekleyin.',
+                  'How do I create a list?',
+                  'Click the + button on the home page, select a category and add items.',
                 ),
                 _buildFAQItem(
-                  'Profilimi nasıl özelleştiririm?',
-                  'Profil sayfanızda ayarlar butonuna tıklayarak bilgilerinizi güncelleyebilirsiniz.',
+                  'How do I customize my profile?',
+                  'Click the settings button on your profile page to update your information.',
                 ),
                 _buildFAQItem(
-                  'Listelerimi nasıl paylaşırım?',
-                  'Liste detay sayfasında paylaş butonunu kullanarak sosyal medyada paylaşabilirsiniz.',
+                  'How do I share my lists?',
+                  'Use the share button on the list detail page to share on social media.',
                 ),
                 _buildFAQItem(
-                  'Hesabımı nasıl güvende tutarım?',
-                  'Güçlü bir şifre kullanın ve gizlilik ayarlarınızı kontrol edin.',
+                  'How do I keep my account secure?',
+                  'Use a strong password and check your privacy settings.',
                 ),
               ],
             ),
@@ -299,11 +299,11 @@ class _HelpSupportPageState extends ConsumerState<HelpSupportPage> {
 
             // Contact Support Section
             _buildSection(
-              'Destek Ekibiyle İletişim',
+              'Contact Support Team',
               PhosphorIcons.chatCircle(),
               [
                 const Text(
-                  'Sorununuz FAQ\'lerde yer almıyorsa, destek ekibimizle iletişime geçebilirsiniz:',
+                  'If your issue is not covered in the FAQs, you can contact our support team:',
                   style: TextStyle(height: 1.4),
                 ),
                 const SizedBox(height: 16),
@@ -312,19 +312,19 @@ class _HelpSupportPageState extends ConsumerState<HelpSupportPage> {
                 DropdownButtonFormField<String>(
                   value: _selectedCategory,
                   decoration: InputDecoration(
-                    labelText: 'Kategori',
+                    labelText: 'Category',
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
                     prefixIcon: Icon(PhosphorIcons.tag()),
                   ),
                   items: const [
-                    DropdownMenuItem(value: 'general', child: Text('Genel')),
-                    DropdownMenuItem(value: 'bug_report', child: Text('Hata Bildirimi')),
-                    DropdownMenuItem(value: 'feature_request', child: Text('Özellik İsteği')),
-                    DropdownMenuItem(value: 'account_issue', child: Text('Hesap Sorunu')),
-                    DropdownMenuItem(value: 'privacy_concern', child: Text('Gizlilik Sorunu')),
-                    DropdownMenuItem(value: 'other', child: Text('Diğer')),
+                    DropdownMenuItem(value: 'general', child: Text('General')),
+                    DropdownMenuItem(value: 'bug_report', child: Text('Bug Report')),
+                    DropdownMenuItem(value: 'feature_request', child: Text('Feature Request')),
+                    DropdownMenuItem(value: 'account_issue', child: Text('Account Issue')),
+                    DropdownMenuItem(value: 'privacy_concern', child: Text('Privacy Concern')),
+                    DropdownMenuItem(value: 'other', child: Text('Other')),
                   ],
                   onChanged: (value) {
                     if (value != null) {
@@ -341,7 +341,7 @@ class _HelpSupportPageState extends ConsumerState<HelpSupportPage> {
                 TextFormField(
                   controller: _emailController,
                   decoration: InputDecoration(
-                    labelText: 'E-posta Adresiniz',
+                    labelText: 'Your Email Address',
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -356,7 +356,7 @@ class _HelpSupportPageState extends ConsumerState<HelpSupportPage> {
                 TextFormField(
                   controller: _subjectController,
                   decoration: InputDecoration(
-                    labelText: 'Konu',
+                    labelText: 'Subject',
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -371,7 +371,7 @@ class _HelpSupportPageState extends ConsumerState<HelpSupportPage> {
                   controller: _messageController,
                   maxLines: 5,
                   decoration: InputDecoration(
-                    labelText: 'Mesajınız',
+                    labelText: 'Your Message',
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -412,7 +412,7 @@ class _HelpSupportPageState extends ConsumerState<HelpSupportPage> {
                               ),
                               const SizedBox(width: 12),
                               Text(
-                                'Gönderiliyor...',
+                                'Sending...',
                                 style: GoogleFonts.inter(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w600,
@@ -421,7 +421,7 @@ class _HelpSupportPageState extends ConsumerState<HelpSupportPage> {
                             ],
                           )
                         : Text(
-                            'Destek Talebi Gönder',
+                            'Send Support Request',
                             style: GoogleFonts.inter(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
@@ -436,7 +436,7 @@ class _HelpSupportPageState extends ConsumerState<HelpSupportPage> {
 
             // Danger Zone Section
             _buildSection(
-              'Tehlikeli Bölge',
+              'Danger Zone',
               PhosphorIcons.warning(),
               [
                 Container(
@@ -458,7 +458,7 @@ class _HelpSupportPageState extends ConsumerState<HelpSupportPage> {
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            'Hesap Silme',
+                            'Delete Account',
                             style: GoogleFonts.inter(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
@@ -469,7 +469,7 @@ class _HelpSupportPageState extends ConsumerState<HelpSupportPage> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Hesabınızı kalıcı olarak silmek istiyorsanız aşağıdaki butonu kullanabilirsiniz. Bu işlem geri alınamaz.',
+                        'If you want to permanently delete your account, you can use the button below. This action cannot be undone.',
                         style: GoogleFonts.inter(
                           fontSize: 14,
                           color: Colors.red.shade700,
@@ -502,7 +502,7 @@ class _HelpSupportPageState extends ConsumerState<HelpSupportPage> {
                                       ),
                                     ),
                                     const SizedBox(width: 8),
-                                    const Text('İşleniyor...'),
+                                    const Text('Processing...'),
                                   ],
                                 )
                               : Row(
@@ -513,7 +513,7 @@ class _HelpSupportPageState extends ConsumerState<HelpSupportPage> {
                                       size: 16,
                                     ),
                                     const SizedBox(width: 8),
-                                    const Text('Hesabımı Sil'),
+                                    const Text('Delete My Account'),
                                   ],
                                 ),
                         ),

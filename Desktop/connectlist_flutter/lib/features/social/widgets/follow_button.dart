@@ -6,11 +6,13 @@ import '../providers/social_providers.dart';
 class FollowButton extends ConsumerWidget {
   final String userId;
   final bool isCompact;
+  final bool showText;
 
   const FollowButton({
     super.key,
     required this.userId,
     this.isCompact = false,
+    this.showText = true,
   });
 
   @override
@@ -34,14 +36,20 @@ class FollowButton extends ConsumerWidget {
                   ? BorderSide(color: Colors.grey.shade300, width: 1)
                   : BorderSide.none,
             ),
-            child: Text(
-              isFollowing ? 'Following' : 'Follow',
-              style: GoogleFonts.inter(
-                fontSize: isCompact ? 12 : 14,
-                fontWeight: FontWeight.w600,
-                color: isFollowing ? Colors.grey.shade700 : Colors.white,
-              ),
-            ),
+            child: showText 
+                ? Text(
+                    isFollowing ? 'Following' : 'Follow',
+                    style: GoogleFonts.inter(
+                      fontSize: isCompact ? 12 : 14,
+                      fontWeight: FontWeight.w600,
+                      color: isFollowing ? Colors.grey.shade700 : Colors.white,
+                    ),
+                  )
+                : Icon(
+                    isFollowing ? Icons.person_remove : Icons.person_add,
+                    size: isCompact ? 16 : 20,
+                    color: isFollowing ? Colors.grey.shade700 : Colors.white,
+                  ),
           ),
         );
       },

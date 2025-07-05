@@ -27,6 +27,64 @@ final notificationSettingsProvider = FutureProvider<Map<String, dynamic>?>((ref)
   }
 });
 
+// Notification Settings Notifier
+final notificationSettingsNotifierProvider = StateNotifierProvider<NotificationSettingsNotifier, AsyncValue<Map<String, dynamic>?>>((ref) {
+  return NotificationSettingsNotifier(ref);
+});
+
+class NotificationSettingsNotifier extends StateNotifier<AsyncValue<Map<String, dynamic>?>> {
+  final Ref _ref;
+  
+  NotificationSettingsNotifier(this._ref) : super(const AsyncValue.loading()) {
+    _loadSettings();
+  }
+  
+  Future<void> _loadSettings() async {
+    final supabase = _ref.read(supabaseProvider);
+    final user = supabase.auth.currentUser;
+    
+    if (user == null) {
+      state = const AsyncValue.data(null);
+      return;
+    }
+    
+    try {
+      final response = await supabase
+          .from('user_notification_settings')
+          .select()
+          .eq('user_id', user.id)
+          .maybeSingle();
+      
+      state = AsyncValue.data(response);
+    } catch (e) {
+      state = AsyncValue.error(e, StackTrace.current);
+    }
+  }
+  
+  Future<void> updateNotificationSettings(Map<String, dynamic> settings) async {
+    final supabase = _ref.read(supabaseProvider);
+    final user = supabase.auth.currentUser;
+    
+    if (user == null) return;
+    
+    try {
+      state = const AsyncValue.loading();
+      
+      await supabase
+          .from('user_notification_settings')
+          .upsert({
+            'user_id': user.id,
+            ...settings,
+            'updated_at': DateTime.now().toIso8601String(),
+          });
+      
+      await _loadSettings();
+    } catch (e) {
+      state = AsyncValue.error(e, StackTrace.current);
+    }
+  }
+}
+
 // Privacy Settings Provider
 final privacySettingsProvider = FutureProvider<Map<String, dynamic>?>((ref) async {
   final supabase = ref.read(supabaseProvider);
@@ -47,6 +105,84 @@ final privacySettingsProvider = FutureProvider<Map<String, dynamic>?>((ref) asyn
     return null;
   }
 });
+
+// Privacy Settings Notifier
+final privacySettingsNotifierProvider = StateNotifierProvider<PrivacySettingsNotifier, AsyncValue<Map<String, dynamic>?>>((ref) {
+  return PrivacySettingsNotifier(ref);
+});
+
+class PrivacySettingsNotifier extends StateNotifier<AsyncValue<Map<String, dynamic>?>> {
+  final Ref _ref;
+  
+  PrivacySettingsNotifier(this._ref) : super(const AsyncValue.loading()) {
+    _loadSettings();
+  }
+  
+  Future<void> _loadSettings() async {
+    final supabase = _ref.read(supabaseProvider);
+    final user = supabase.auth.currentUser;
+    
+    if (user == null) {
+      state = const AsyncValue.data(null);
+      return;
+    }
+    
+    try {
+      final response = await supabase
+          .from('user_privacy_settings')
+          .select()
+          .eq('user_id', user.id)
+          .maybeSingle();
+      
+      state = AsyncValue.data(response);
+    } catch (e) {
+      state = AsyncValue.error(e, StackTrace.current);
+    }
+  }
+  
+  Future<void> updatePrivacySettings(Map<String, dynamic> settings) async {
+    final supabase = _ref.read(supabaseProvider);
+    final user = supabase.auth.currentUser;
+    
+    if (user == null) return;
+    
+    try {
+      state = const AsyncValue.loading();
+      
+      // Check if settings exist
+      final existing = await supabase
+          .from('user_privacy_settings')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+      
+      if (existing != null) {
+        // Update existing settings
+        await supabase
+            .from('user_privacy_settings')
+            .update({
+              ...settings,
+              'updated_at': DateTime.now().toIso8601String(),
+            })
+            .eq('user_id', user.id);
+      } else {
+        // Insert new settings
+        await supabase
+            .from('user_privacy_settings')
+            .insert({
+              'user_id': user.id,
+              ...settings,
+              'created_at': DateTime.now().toIso8601String(),
+              'updated_at': DateTime.now().toIso8601String(),
+            });
+      }
+      
+      await _loadSettings();
+    } catch (e) {
+      state = AsyncValue.error(e, StackTrace.current);
+    }
+  }
+}
 
 // Update Profile Provider
 final updateProfileProvider = FutureProvider.family<bool, Map<String, dynamic>>((ref, profileData) async {

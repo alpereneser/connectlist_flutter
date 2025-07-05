@@ -55,7 +55,7 @@ class FollowingModal extends ConsumerWidget {
                 ),
                 Expanded(
                   child: Text(
-                    'Takip Edilenler',
+                    'Following',
                     style: GoogleFonts.inter(
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
@@ -85,7 +85,7 @@ class FollowingModal extends ConsumerWidget {
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          'Henüz kimseyi takip etmiyor',
+                          'Not following anyone yet',
                           style: GoogleFonts.inter(
                             fontSize: 16,
                             color: Colors.grey.shade600,
@@ -118,7 +118,7 @@ class FollowingModal extends ConsumerWidget {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Takip edilenler yüklenemedi',
+                      'Failed to load following',
                       style: GoogleFonts.inter(
                         fontSize: 16,
                         color: Colors.grey.shade600,

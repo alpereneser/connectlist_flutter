@@ -4,7 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../list/models/list_model.dart';
 import '../../list/providers/liked_lists_provider.dart';
-import '../../list/widgets/list_item.dart';
+import '../../list/widgets/list_item.dart' as ListItemWidget;
 import '../pages/profile_page.dart';
 
 class LikedListsModal extends ConsumerWidget {
@@ -55,7 +55,7 @@ class LikedListsModal extends ConsumerWidget {
                 ),
                 Expanded(
                   child: Text(
-                    'Beğenilen Listeler',
+                    'Liked Lists',
                     style: GoogleFonts.inter(
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
@@ -85,7 +85,7 @@ class LikedListsModal extends ConsumerWidget {
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          'Henüz beğenilen liste yok',
+                          'No liked lists yet',
                           style: GoogleFonts.inter(
                             fontSize: 16,
                             color: Colors.grey.shade600,
@@ -103,7 +103,7 @@ class LikedListsModal extends ConsumerWidget {
                     final list = likedLists[index];
                     return Container(
                       margin: const EdgeInsets.only(bottom: 16),
-                      child: ListItem(
+                      child: ListItemWidget.ListItem(
                         list: list,
                         showActions: false,
                       ),
@@ -125,7 +125,7 @@ class LikedListsModal extends ConsumerWidget {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Beğenilen listeler yüklenemedi',
+                      'Failed to load liked lists',
                       style: GoogleFonts.inter(
                         fontSize: 16,
                         color: Colors.grey.shade600,

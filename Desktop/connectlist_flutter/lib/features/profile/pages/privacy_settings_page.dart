@@ -51,6 +51,10 @@ class _PrivacySettingsPageState extends ConsumerState<PrivacySettingsPage> {
           _allowListLikes = privacySettings['allow_list_likes'] ?? true;
           _isLoading = false;
         });
+      } else {
+        setState(() {
+          _isLoading = false;
+        });
       }
     } catch (e) {
       setState(() {
@@ -81,7 +85,8 @@ class _PrivacySettingsPageState extends ConsumerState<PrivacySettingsPage> {
         'allow_list_likes': _allowListLikes,
       };
 
-      await ref.read(settings.updatePrivacySettingsProvider(settingsData).future);
+      final notifier = ref.read(settings.privacySettingsNotifierProvider.notifier);
+      await notifier.updatePrivacySettings(settingsData);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -94,7 +99,7 @@ class _PrivacySettingsPageState extends ConsumerState<PrivacySettingsPage> {
                   size: 20,
                 ),
                 const SizedBox(width: 12),
-                const Text('Gizlilik ayarları güncellendi'),
+                const Text('Privacy settings updated successfully'),
               ],
             ),
             backgroundColor: Colors.green.shade600,

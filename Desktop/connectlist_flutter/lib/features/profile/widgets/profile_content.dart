@@ -69,7 +69,10 @@ class _ProfileContentState extends ConsumerState<ProfileContent> {
       
       // Filter by category if not "All Lists" (index 0)
       if (widget.categoryIndex > 0) {
-        queryBuilder = queryBuilder.eq('category_id', widget.categoryIndex);
+        final categoryName = _getCategoryNameFromIndex(widget.categoryIndex);
+        if (categoryName != null) {
+          queryBuilder = queryBuilder.eq('categories.name', categoryName);
+        }
       }
       
       final response = await queryBuilder.order('created_at', ascending: false);
@@ -88,6 +91,20 @@ class _ProfileContentState extends ConsumerState<ProfileContent> {
         _isLoading = false;
       });
     }
+  }
+
+  String? _getCategoryNameFromIndex(int index) {
+    // Map category index to actual category names in the database
+    final categoryMapping = {
+      1: 'movies',    // Movies
+      2: 'books',     // Books
+      3: 'tv_shows',  // TV Shows
+      4: 'games',     // Games
+      5: 'places',    // Places
+      6: 'music',     // Music (if exists in DB)
+      7: 'people',    // People (if exists in DB)
+    };
+    return categoryMapping[index];
   }
 
   @override
