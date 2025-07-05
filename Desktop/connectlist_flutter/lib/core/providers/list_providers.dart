@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/content_item.dart';
@@ -110,32 +111,68 @@ final createListProvider = FutureProvider.family<String?, ({
   }
 });
 
-final userListsProvider = FutureProvider.family<List<Map<String, dynamic>>, String?>((ref, userId) async {
+final userListsProvider = StreamProvider.family<List<Map<String, dynamic>>, String?>((ref, userId) {
   final supabase = ref.read(supabaseClientProvider);
   
-  try {
-    final query = supabase
-        .from('lists')
-        .select('''
-          *, 
-          users_profiles!creator_id(username, avatar_url), 
-          categories(name, display_name),
-          likes_count,
-          comments_count,
-          shares_count,
-          views_count
-        ''');
-    
-    if (userId != null) {
-      query.eq('creator_id', userId);
+  // Create a stream controller
+  final controller = StreamController<List<Map<String, dynamic>>>();
+  
+  // Function to fetch data
+  Future<void> fetchData() async {
+    try {
+      final query = supabase
+          .from('lists')
+          .select('''
+            *, 
+            users_profiles!creator_id(username, avatar_url), 
+            categories(name, display_name),
+            likes_count,
+            comments_count,
+            shares_count,
+            views_count
+          ''');
+      
+      if (userId != null) {
+        query.eq('creator_id', userId);
+      }
+      
+      final data = await query.order('created_at', ascending: false);
+      controller.add(List<Map<String, dynamic>>.from(data));
+    } catch (e) {
+      print('Error fetching lists: $e');
+      controller.add([]);
     }
-    
-    final response = await query.order('created_at', ascending: false);
-    return List<Map<String, dynamic>>.from(response);
-  } catch (e) {
-    print('Error fetching lists: $e');
-    return [];
   }
+  
+  // Initial fetch
+  fetchData();
+  
+  // Set up realtime subscription
+  final channel = supabase.channel('lists_changes_${userId ?? 'all'}').onPostgresChanges(
+    event: PostgresChangeEvent.all,
+    schema: 'public',
+    table: 'lists',
+    filter: userId != null ? PostgresChangeFilter(
+      type: PostgresChangeFilterType.eq,
+      column: 'creator_id',
+      value: userId,
+    ) : null,
+    callback: (payload) {
+      print('Realtime event: ${payload.eventType} for user: $userId');
+      // Refetch data on any change
+      fetchData();
+    },
+  );
+  
+  channel.subscribe();
+  
+  // Clean up when provider is disposed
+  ref.onDispose(() {
+    channel.unsubscribe();
+    controller.close();
+  });
+  
+  return controller.stream;
 });
 
 final listDetailsProvider = FutureProvider.family<Map<String, dynamic>?, String>((ref, listId) async {
@@ -201,7 +238,6 @@ final toggleListLikeProvider = FutureProvider.family<bool, String>((ref, listId)
       final insertData = {
         'list_id': listId,
         'user_id': user.id,
-        'created_at': DateTime.now().toIso8601String(),
       };
       print('📦 Insert data: $insertData');
       

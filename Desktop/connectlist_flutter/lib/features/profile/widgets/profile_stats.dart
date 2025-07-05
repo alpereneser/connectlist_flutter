@@ -3,6 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../providers/profile_stats_provider.dart';
+import '../providers/user_profile_provider.dart';
+import '../../auth/providers/auth_provider.dart';
+import 'followers_modal.dart';
+import 'following_modal.dart';
+import 'liked_lists_modal.dart';
 
 class ProfileStats extends ConsumerWidget {
   final String userId;
@@ -17,6 +22,7 @@ class ProfileStats extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final statsAsync = ref.watch(profileStatsProvider(userId));
+    final userAsync = ref.watch(userProfileProvider(userId));
     
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -37,7 +43,15 @@ class ProfileStats extends ConsumerWidget {
               'Followers',
               stats['followers']!,
               () {
-                // TODO: Navigate to followers list
+                userAsync.when(
+                  data: (user) {
+                    if (user != null) {
+                      _showFollowersModal(context, user.username);
+                    }
+                  },
+                  loading: () {},
+                  error: (_, __) {},
+                );
               },
             ),
             _buildStatItem(
@@ -45,7 +59,15 @@ class ProfileStats extends ConsumerWidget {
               'Following',
               stats['following']!,
               () {
-                // TODO: Navigate to following list
+                userAsync.when(
+                  data: (user) {
+                    if (user != null) {
+                      _showFollowingModal(context, user.username);
+                    }
+                  },
+                  loading: () {},
+                  error: (_, __) {},
+                );
               },
             ),
             _buildStatItem(
@@ -53,7 +75,15 @@ class ProfileStats extends ConsumerWidget {
               'Liked',
               stats['liked']!,
               () {
-                // TODO: Navigate to liked lists
+                userAsync.when(
+                  data: (user) {
+                    if (user != null) {
+                      _showLikedListsModal(context, user.username);
+                    }
+                  },
+                  loading: () {},
+                  error: (_, __) {},
+                );
               },
             ),
           ],
@@ -140,6 +170,42 @@ class ProfileStats extends ConsumerWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showFollowersModal(BuildContext context, String userName) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => FollowersModal(
+        userId: userId,
+        userName: userName,
+      ),
+    );
+  }
+
+  void _showFollowingModal(BuildContext context, String userName) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => FollowingModal(
+        userId: userId,
+        userName: userName,
+      ),
+    );
+  }
+
+  void _showLikedListsModal(BuildContext context, String userName) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => LikedListsModal(
+        userId: userId,
+        userName: userName,
       ),
     );
   }

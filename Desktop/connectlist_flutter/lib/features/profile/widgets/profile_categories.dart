@@ -19,7 +19,7 @@ class ProfileCategories extends StatelessWidget {
     final categories = _getCategories();
 
     return Container(
-      height: 60,
+      height: 50,
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(
@@ -29,23 +29,24 @@ class ProfileCategories extends StatelessWidget {
       ),
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 20),
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        physics: const BouncingScrollPhysics(),
         itemCount: categories.length,
         itemBuilder: (context, index) {
           final isSelected = selectedIndex == index;
           final category = categories[index];
           
           return Padding(
-            padding: const EdgeInsets.only(right: 16),
+            padding: const EdgeInsets.only(right: 8),
             child: Material(
               color: Colors.transparent,
               child: InkWell(
                 onTap: () => onTabSelected(index),
                 splashColor: Colors.orange.shade100,
                 highlightColor: Colors.orange.shade50,
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(6),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     border: isSelected ? Border(
                       bottom: BorderSide(
@@ -59,14 +60,14 @@ class ProfileCategories extends StatelessWidget {
                     children: [
                       Icon(
                         category['icon'],
-                        size: 20,
+                        size: 18,
                         color: isSelected ? Colors.orange.shade600 : Colors.grey.shade500,
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
                       Text(
                         category['name'],
                         style: GoogleFonts.inter(
-                          fontSize: 14,
+                          fontSize: 13,
                           fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                           color: isSelected ? Colors.orange.shade600 : Colors.grey.shade600,
                         ),

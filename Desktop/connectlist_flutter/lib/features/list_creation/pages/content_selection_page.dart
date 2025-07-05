@@ -7,6 +7,7 @@ import '../../../shared/widgets/bottom_menu.dart';
 import '../../../shared/widgets/sub_header.dart';
 import '../../../core/models/content_item.dart' as core;
 import '../../../core/providers/api_providers.dart';
+import '../../../core/providers/list_providers.dart';
 import '../models/content_item.dart';
 import '../widgets/content_search_widget.dart';
 import '../widgets/selected_items_widget.dart';
@@ -38,11 +39,18 @@ class _ContentSelectionPageState extends ConsumerState<ContentSelectionPage> {
   bool _isSearching = false;
   Timer? _debounceTimer;
   String _currentQuery = '';
+  final FocusNode _searchFocusNode = FocusNode();
 
   @override
   void initState() {
     super.initState();
     _searchController.addListener(_onSearchTextChanged);
+    // Auto-focus search field when adding items to existing list
+    if (widget.existingListId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _searchFocusNode.requestFocus();
+      });
+    }
   }
 
   @override
@@ -50,6 +58,7 @@ class _ContentSelectionPageState extends ConsumerState<ContentSelectionPage> {
     _debounceTimer?.cancel();
     _searchController.removeListener(_onSearchTextChanged);
     _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -91,7 +100,7 @@ class _ContentSelectionPageState extends ConsumerState<ContentSelectionPage> {
     // with debouncing for better performance
   }
 
-  void _proceedToNextStep() {
+  void _proceedToNextStep() async {
     if (_selectedItems.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -102,6 +111,66 @@ class _ContentSelectionPageState extends ConsumerState<ContentSelectionPage> {
       return;
     }
 
+    // If we're adding to an existing list, add items directly
+    if (widget.existingListId != null) {
+      try {
+        final supabase = ref.read(supabaseClientProvider);
+        
+        // Get current max position
+        final existingItems = await supabase
+            .from('list_items')
+            .select('position')
+            .eq('list_id', widget.existingListId!)
+            .order('position', ascending: false)
+            .limit(1);
+        
+        int startPosition = 1;
+        if (existingItems.isNotEmpty) {
+          startPosition = (existingItems[0]['position'] as int) + 1;
+        }
+        
+        // Add new items
+        final listItems = _selectedItems.map((item) => {
+          'list_id': widget.existingListId,
+          'external_id': item.id,
+          'title': item.title,
+          'description': item.subtitle,
+          'image_url': item.imageUrl,
+          'external_data': item.metadata,
+          'source': item.source ?? 'manual',
+          'position': startPosition + _selectedItems.indexOf(item),
+        }).toList();
+        
+        await supabase
+            .from('list_items')
+            .insert(listItems);
+        
+        // Refresh list details
+        ref.invalidate(listDetailsProvider(widget.existingListId!));
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${_selectedItems.length} items added to list'),
+              backgroundColor: Colors.green.shade600,
+            ),
+          );
+          Navigator.of(context).pop();
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error adding items: $e'),
+              backgroundColor: Colors.red.shade600,
+            ),
+          );
+        }
+      }
+      return;
+    }
+
+    // Otherwise, proceed to create new list
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => ListDetailsPage(
@@ -207,6 +276,8 @@ class _ContentSelectionPageState extends ConsumerState<ContentSelectionPage> {
                       controller: _searchController,
                       onChanged: _onSearchChanged,
                       isLoading: _isSearching,
+                      focusNode: _searchFocusNode,
+                      autofocus: widget.existingListId != null,
                     ),
                   ),
                   

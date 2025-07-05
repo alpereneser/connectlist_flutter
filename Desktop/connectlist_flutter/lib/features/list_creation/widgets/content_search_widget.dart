@@ -6,12 +6,16 @@ class ContentSearchWidget extends StatelessWidget {
   final TextEditingController controller;
   final Function(String) onChanged;
   final bool isLoading;
+  final FocusNode? focusNode;
+  final bool autofocus;
 
   const ContentSearchWidget({
     super.key,
     required this.controller,
     required this.onChanged,
     this.isLoading = false,
+    this.focusNode,
+    this.autofocus = false,
   });
 
   @override
@@ -25,6 +29,8 @@ class ContentSearchWidget extends StatelessWidget {
       child: TextField(
         controller: controller,
         onChanged: onChanged,
+        focusNode: focusNode,
+        autofocus: autofocus,
         style: GoogleFonts.inter(
           fontSize: 16,
           color: Colors.grey.shade800,

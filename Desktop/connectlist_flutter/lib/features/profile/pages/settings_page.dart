@@ -1,9 +1,15 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../../shared/widgets/bottom_menu.dart';
+import '../../../core/providers/settings_providers.dart' as settings;
+import 'privacy_settings_page.dart';
+import 'notification_settings_page.dart';
+import 'help_support_page.dart';
 
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
@@ -17,9 +23,15 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   late TextEditingController _usernameController;
   late TextEditingController _bioController;
   late TextEditingController _emailController;
+  late TextEditingController _websiteController;
+  late TextEditingController _locationController;
+  late TextEditingController _phoneController;
   
   bool _isLoading = false;
+  bool _isUploadingAvatar = false;
   int _currentBottomIndex = 4; // Profile tab is selected
+  final ImagePicker _imagePicker = ImagePicker();
+  String? _newAvatarUrl;
 
   void _onBottomMenuTap(int index) {
     if (index == 4) {
@@ -40,16 +52,20 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _usernameController = TextEditingController();
     _bioController = TextEditingController();
     _emailController = TextEditingController();
+    _websiteController = TextEditingController();
+    _locationController = TextEditingController();
+    _phoneController = TextEditingController();
     
     // Initialize with current user data
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final user = ref.read(currentUserProvider);
-      final supabase = ref.read(supabaseProvider);
+      final supabase = ref.read(settings.supabaseProvider);
       if (user != null) {
         _fullNameController.text = user.fullName ?? '';
         _usernameController.text = user.username;
         _bioController.text = user.bio ?? '';
         _emailController.text = supabase.auth.currentUser?.email ?? '';
+        // Note: website, location, phone will be loaded from extended profile
       }
     });
   }
@@ -60,6 +76,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _usernameController.dispose();
     _bioController.dispose();
     _emailController.dispose();
+    _websiteController.dispose();
+    _locationController.dispose();
+    _phoneController.dispose();
     super.dispose();
   }
 
@@ -71,12 +90,28 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     });
 
     try {
-      final authNotifier = ref.read(authProvider.notifier);
-      await authNotifier.updateProfile(
-        fullName: _fullNameController.text.trim(),
-        username: _usernameController.text.trim(),
-        bio: _bioController.text.trim(),
-      );
+      // Prepare profile data
+      final profileData = {
+        'full_name': _fullNameController.text.trim(),
+        'username': _usernameController.text.trim(),
+        'bio': _bioController.text.trim(),
+        'website': _websiteController.text.trim().isEmpty ? null : _websiteController.text.trim(),
+        'location': _locationController.text.trim().isEmpty ? null : _locationController.text.trim(),
+        'phone_number': _phoneController.text.trim().isEmpty ? null : _phoneController.text.trim(),
+      };
+      
+      // Add new avatar URL if uploaded
+      if (_newAvatarUrl != null) {
+        profileData['avatar_url'] = _newAvatarUrl;
+      }
+      
+      // Remove empty values
+      profileData.removeWhere((key, value) => value == null || value == '');
+      
+      await ref.read(settings.updateProfileProvider(profileData).future);
+      
+      // Refresh auth provider to get updated user data
+      ref.invalidate(currentUserProvider);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -89,7 +124,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   size: 20,
                 ),
                 const SizedBox(width: 12),
-                const Text('Profile updated successfully'),
+                const Text('Profil başarıyla güncellendi'),
               ],
             ),
             backgroundColor: Colors.green.shade600,
@@ -112,7 +147,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   size: 20,
                 ),
                 const SizedBox(width: 12),
-                Text('Error: ${e.toString()}'),
+                Text('Hata: ${e.toString()}'),
               ],
             ),
             backgroundColor: Colors.red.shade600,
@@ -130,25 +165,125 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     }
   }
 
+  Future<void> _pickAndUploadAvatar() async {
+    try {
+      // Kullanıcıya kaynak seçimi sun
+      final ImageSource? source = await _showImageSourceDialog();
+      if (source == null) return;
+      
+      final XFile? image = await _imagePicker.pickImage(
+        source: source,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 85,
+        preferredCameraDevice: CameraDevice.front,
+      );
+      
+      if (image != null) {
+        setState(() {
+          _isUploadingAvatar = true;
+        });
+        
+        final bytes = await image.readAsBytes();
+        final avatarUrl = await ref.read(settings.uploadAvatarProvider(bytes).future);
+        
+        setState(() {
+          _newAvatarUrl = avatarUrl;
+          _isUploadingAvatar = false;
+        });
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Avatar yüklendi! Değişiklikleri kaydetmeyi unutmayın.'),
+              backgroundColor: Colors.green.shade600,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      setState(() {
+        _isUploadingAvatar = false;
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Avatar yüklenirken hata: $e'),
+            backgroundColor: Colors.red.shade600,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<ImageSource?> _showImageSourceDialog() async {
+    return await showDialog<ImageSource?>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          'Fotoğraf Seç',
+          style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(
+                PhosphorIcons.camera(),
+                color: Colors.orange.shade600,
+              ),
+              title: Text(
+                'Kameradan Çek',
+                style: GoogleFonts.inter(),
+              ),
+              onTap: () => Navigator.pop(context, ImageSource.camera),
+            ),
+            ListTile(
+              leading: Icon(
+                PhosphorIcons.image(),
+                color: Colors.orange.shade600,
+              ),
+              title: Text(
+                'Galeriden Seç',
+                style: GoogleFonts.inter(),
+              ),
+              onTap: () => Navigator.pop(context, ImageSource.gallery),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'İptal',
+              style: GoogleFonts.inter(color: Colors.grey.shade600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _signOut() async {
     final shouldSignOut = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text(
-          'Sign Out',
+          'Çıkış Yap',
           style: GoogleFonts.inter(
             fontWeight: FontWeight.w600,
           ),
         ),
         content: Text(
-          'Are you sure you want to sign out?',
+          'Çıkış yapmak istediğinizden emin misiniz?',
           style: GoogleFonts.inter(),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
             child: Text(
-              'Cancel',
+              'İptal',
               style: GoogleFonts.inter(
                 color: Colors.grey.shade600,
               ),
@@ -161,7 +296,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               foregroundColor: Colors.white,
             ),
             child: Text(
-              'Sign Out',
+              'Çıkış Yap',
               style: GoogleFonts.inter(
                 fontWeight: FontWeight.w600,
               ),
@@ -213,19 +348,30 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Avatar Section
+                _buildSection(
+                  'Profil Fotoğrafı',
+                  PhosphorIcons.camera(),
+                  [
+                    _buildAvatarSection(),
+                  ],
+                ),
+
+                const SizedBox(height: 24),
+
                 // Profile Section
                 _buildSection(
-                  'Profile Information',
+                  'Profil Bilgileri',
                   PhosphorIcons.user(),
                   [
                     _buildTextField(
-                      'Full Name',
+                      'Ad Soyad',
                       _fullNameController,
                       PhosphorIcons.user(),
                     ),
                     const SizedBox(height: 16),
                     _buildTextField(
-                      'Username',
+                      'Kullanıcı Adı',
                       _usernameController,
                       PhosphorIcons.at(),
                     ),
@@ -238,7 +384,28 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     ),
                     const SizedBox(height: 16),
                     _buildTextField(
-                      'Email',
+                      'Website',
+                      _websiteController,
+                      PhosphorIcons.globe(),
+                      placeholder: 'https://example.com',
+                    ),
+                    const SizedBox(height: 16),
+                    _buildTextField(
+                      'Konum',
+                      _locationController,
+                      PhosphorIcons.mapPin(),
+                      placeholder: 'İstanbul, Türkiye',
+                    ),
+                    const SizedBox(height: 16),
+                    _buildTextField(
+                      'Telefon',
+                      _phoneController,
+                      PhosphorIcons.phone(),
+                      placeholder: '+90 555 123 45 67',
+                    ),
+                    const SizedBox(height: 16),
+                    _buildTextField(
+                      'E-posta',
                       _emailController,
                       PhosphorIcons.envelope(),
                       enabled: false,
@@ -287,7 +454,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                             ],
                           )
                         : Text(
-                            'Save Changes',
+                            'Değişiklikleri Kaydet',
                             style: GoogleFonts.inter(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
@@ -300,28 +467,40 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
                 // Account Section
                 _buildSection(
-                  'Account',
+                  'Hesap Ayarları',
                   PhosphorIcons.gear(),
                   [
                     _buildSettingsTile(
-                      'Privacy & Security',
+                      'Gizlilik ve Güvenlik',
                       PhosphorIcons.shield(),
                       () {
-                        // TODO: Navigate to privacy settings
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => const PrivacySettingsPage(),
+                          ),
+                        );
                       },
                     ),
                     _buildSettingsTile(
-                      'Notifications',
+                      'Bildirimler',
                       PhosphorIcons.bell(),
                       () {
-                        // TODO: Navigate to notification settings
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => const NotificationSettingsPage(),
+                          ),
+                        );
                       },
                     ),
                     _buildSettingsTile(
-                      'Help & Support',
+                      'Yardım ve Destek',
                       PhosphorIcons.question(),
                       () {
-                        // TODO: Navigate to help
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => const HelpSupportPage(),
+                          ),
+                        );
                       },
                     ),
                   ],
@@ -351,7 +530,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          'Sign Out',
+                          'Çıkış Yap',
                           style: GoogleFonts.inter(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
@@ -425,12 +604,96 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     );
   }
 
+  Widget _buildAvatarSection() {
+    final currentUser = ref.watch(currentUserProvider);
+    final avatarUrl = _newAvatarUrl ?? currentUser?.avatarUrl;
+    
+    return Center(
+      child: Column(
+        children: [
+          Stack(
+            children: [
+              Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.grey.shade300,
+                    width: 2,
+                  ),
+                ),
+                child: CircleAvatar(
+                  radius: 58,
+                  backgroundColor: Colors.grey.shade100,
+                  backgroundImage: avatarUrl != null && avatarUrl.isNotEmpty
+                      ? NetworkImage(avatarUrl)
+                      : null,
+                  child: avatarUrl == null || avatarUrl.isEmpty
+                      ? Icon(
+                          PhosphorIcons.user(),
+                          size: 40,
+                          color: Colors.grey.shade400,
+                        )
+                      : null,
+                ),
+              ),
+              Positioned(
+                bottom: 0,
+                right: 0,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade600,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.white,
+                      width: 2,
+                    ),
+                  ),
+                  child: IconButton(
+                    icon: _isUploadingAvatar
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        : Icon(
+                            PhosphorIcons.camera(),
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                    onPressed: _isUploadingAvatar ? null : _pickAndUploadAvatar,
+                    padding: const EdgeInsets.all(8),
+                    constraints: const BoxConstraints(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Profil fotoğrafını değiştirmek için kameraya tıklayın',
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              color: Colors.grey.shade600,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildTextField(
     String label,
     TextEditingController controller,
     IconData icon, {
     int maxLines = 1,
     bool enabled = true,
+    String? placeholder,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -453,6 +716,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             color: enabled ? Colors.grey.shade800 : Colors.grey.shade500,
           ),
           decoration: InputDecoration(
+            hintText: placeholder,
             prefixIcon: Icon(
               icon,
               size: 20,

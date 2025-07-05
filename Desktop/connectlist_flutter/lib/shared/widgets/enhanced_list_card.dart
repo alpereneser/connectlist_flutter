@@ -114,60 +114,7 @@ class _EnhancedListCardState extends ConsumerState<EnhancedListCard> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // List Title
-                Text(
-                  widget.listTitle,
-                  style: GoogleFonts.inter(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.grey.shade800,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                
-                if (truncatedDescription != null && truncatedDescription.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  // List Description
-                  Text(
-                    truncatedDescription,
-                    style: GoogleFonts.inter(
-                      fontSize: 15,
-                      color: Colors.grey.shade600,
-                      height: 1.4,
-                    ),
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-                
-                // Horizontal scrolling items preview
-                if (_listItems.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    height: 100,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _listItems.length,
-                      itemBuilder: (context, index) {
-                        final item = _listItems[index];
-                        return _buildItemPreview(item, index);
-                      },
-                    ),
-                  ),
-                ] else if (_isLoadingItems) ...[
-                  const SizedBox(height: 16),
-                  const SizedBox(
-                    height: 100,
-                    child: Center(
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ),
-                ],
-                
-                const SizedBox(height: 16),
-                
-                // User Info Row
+                // User Info Row (moved to top)
                 Row(
                   children: [
                     // User Avatar
@@ -261,7 +208,60 @@ class _EnhancedListCardState extends ConsumerState<EnhancedListCard> {
                   ],
                 ),
                 
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
+                
+                // List Title
+                Text(
+                  widget.listTitle,
+                  style: GoogleFonts.inter(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.grey.shade800,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                
+                if (truncatedDescription != null && truncatedDescription.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  // List Description
+                  Text(
+                    truncatedDescription,
+                    style: GoogleFonts.inter(
+                      fontSize: 15,
+                      color: Colors.grey.shade600,
+                      height: 1.4,
+                    ),
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+                
+                // Horizontal scrolling items preview
+                if (_listItems.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    height: 240,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: _listItems.length,
+                      itemBuilder: (context, index) {
+                        final item = _listItems[index];
+                        return _buildItemPreview(item, index);
+                      },
+                    ),
+                  ),
+                ] else if (_isLoadingItems) ...[
+                  const SizedBox(height: 16),
+                  const SizedBox(
+                    height: 240,
+                    child: Center(
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                ],
+                
+                const SizedBox(height: 16),
                 
                 // List Stats
                 Row(
@@ -397,31 +397,31 @@ class _EnhancedListCardState extends ConsumerState<EnhancedListCard> {
     }
     
     return Container(
-      width: 80,
-      margin: EdgeInsets.only(right: 12, left: index == 0 ? 0 : 0),
+      width: 160,
+      margin: EdgeInsets.only(right: 16, left: index == 0 ? 0 : 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Use SmartBookCover for books, regular Image for others
           source == 'google_books'
               ? ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(12),
                   child: SmartBookCover(
                     imageUrl: imageUrl,
                     bookTitle: title,
                     author: author,
                     isbn: isbn,
-                    width: 80,
-                    height: 60,
+                    width: 160,
+                    height: 200,
                     fit: BoxFit.cover,
                   ),
                 )
               : Container(
-                  height: 60,
-                  width: 80,
+                  height: 200,
+                  width: 160,
                   decoration: BoxDecoration(
                     color: Colors.grey.shade200,
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: imageUrl != null && imageUrl.isNotEmpty
@@ -458,12 +458,13 @@ class _EnhancedListCardState extends ConsumerState<EnhancedListCard> {
                           ),
                         ),
                 ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 8),
           Text(
             title,
             style: GoogleFonts.inter(
-              fontSize: 12,
-              color: Colors.grey.shade700,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey.shade800,
             ),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,

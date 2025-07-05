@@ -140,18 +140,78 @@ class ProfileHeader extends StatelessWidget {
             ],
           ),
           
-          // Bio
-          if (user.bio != null && user.bio!.isNotEmpty) ...[
+          // Bio, Website, Location
+          if ((user.bio != null && user.bio!.isNotEmpty) ||
+              (user.website != null && user.website!.isNotEmpty) ||
+              (user.location != null && user.location!.isNotEmpty)) ...[
             const SizedBox(height: 20),
             Container(
               width: double.infinity,
-              child: Text(
-                user.bio!,
-                style: GoogleFonts.inter(
-                  fontSize: 15,
-                  color: Colors.grey.shade700,
-                  height: 1.4,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Bio
+                  if (user.bio != null && user.bio!.isNotEmpty) ...[
+                    Text(
+                      user.bio!,
+                      style: GoogleFonts.inter(
+                        fontSize: 15,
+                        color: Colors.grey.shade700,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  
+                  // Website
+                  if (user.website != null && user.website!.isNotEmpty) ...[
+                    Row(
+                      children: [
+                        Icon(
+                          PhosphorIcons.link(),
+                          size: 16,
+                          color: Colors.grey.shade600,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            user.website!,
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              color: Colors.blue.shade600,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  
+                  // Location
+                  if (user.location != null && user.location!.isNotEmpty) ...[
+                    Row(
+                      children: [
+                        Icon(
+                          PhosphorIcons.mapPin(),
+                          size: 16,
+                          color: Colors.grey.shade600,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            user.location!,
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              color: Colors.grey.shade700,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
               ),
             ),
           ],

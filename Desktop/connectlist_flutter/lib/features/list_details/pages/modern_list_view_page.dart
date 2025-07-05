@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -7,11 +8,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../shared/widgets/bottom_menu.dart';
 import '../../../shared/widgets/sub_header.dart';
 import '../../../shared/utils/navigation_helper.dart';
-import '../../../core/models/content_item.dart';
+import '../../../core/models/content_item.dart' as core;
 import '../../../core/providers/list_providers.dart';
+import '../../../core/providers/api_providers.dart';
 import '../../../main.dart';
 import '../../profile/pages/profile_page.dart';
 import '../../list_creation/pages/content_selection_page.dart';
+import '../../list_creation/models/content_item.dart';
 
 class ModernListViewPage extends ConsumerStatefulWidget {
   final String listId;
@@ -29,7 +32,6 @@ class ModernListViewPage extends ConsumerStatefulWidget {
 
 class _ModernListViewPageState extends ConsumerState<ModernListViewPage> {
   bool _isLiked = false;
-  bool _isOwner = false;
   String? _listOwnerId;
   
   void _toggleLike() async {
@@ -52,138 +54,16 @@ class _ModernListViewPageState extends ConsumerState<ModernListViewPage> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        maxChildSize: 0.95,
-        minChildSize: 0.5,
-        builder: (context, scrollController) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: Column(
-            children: [
-              // Handle
-              Container(
-                margin: const EdgeInsets.only(top: 12, bottom: 8),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              
-              // Header
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                child: Row(
-                  children: [
-                    Text(
-                      'Comments',
-                      style: GoogleFonts.inter(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      icon: Icon(PhosphorIcons.x()),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-              ),
-              
-              const Divider(height: 1),
-              
-              // Comments List
-              Expanded(
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        PhosphorIcons.chatCircle(),
-                        size: 64,
-                        color: Colors.grey.shade300,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'No comments yet',
-                        style: GoogleFonts.inter(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.grey.shade500,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Be the first to comment on this list',
-                        style: GoogleFonts.inter(
-                          fontSize: 14,
-                          color: Colors.grey.shade400,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              
-              // Comment Input
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade50,
-                  border: Border(top: BorderSide(color: Colors.grey.shade200)),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        decoration: InputDecoration(
-                          hintText: 'Add a comment...',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(24),
-                            borderSide: BorderSide.none,
-                          ),
-                          filled: true,
-                          fillColor: Colors.white,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.orange.shade600,
-                        shape: BoxShape.circle,
-                      ),
-                      child: IconButton(
-                        icon: const Icon(
-                          Icons.send,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                        onPressed: () {
-                          // TODO: Implement comment submission
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
+      builder: (context) => CommentsBottomSheet(
+        listId: widget.listId,
       ),
     );
   }
 
   void _showOptionsMenu() {
+    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+    final isOwner = currentUserId != null && currentUserId == _listOwnerId;
+    
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -197,7 +77,7 @@ class _ModernListViewPageState extends ConsumerState<ModernListViewPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             // Owner-only options
-            if (_isOwner) ...[
+            if (isOwner) ...[
               ListTile(
                 leading: Icon(PhosphorIcons.plus()),
                 title: Text(
@@ -237,7 +117,7 @@ class _ModernListViewPageState extends ConsumerState<ModernListViewPage> {
             ),
             
             // Owner delete option or report option
-            if (_isOwner) 
+            if (isOwner) 
               ListTile(
                 leading: Icon(
                   PhosphorIcons.trash(),
@@ -386,51 +266,367 @@ class _ModernListViewPageState extends ConsumerState<ModernListViewPage> {
       return;
     }
 
-    // For now, show a dialog with edit options
-    // In the future, this can navigate to a dedicated edit page
-    showDialog(
+    // Show comprehensive edit page with all options expanded
+    _showComprehensiveEditDialog(listData);
+  }
+
+  void _showComprehensiveEditDialog(Map<String, dynamic> listData) {
+    final titleController = TextEditingController(text: listData['title']);
+    final descriptionController = TextEditingController(text: listData['description']);
+    
+    showModalBottomSheet(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(
-          'Edit List',
-          style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.9,
+        maxChildSize: 0.95,
+        minChildSize: 0.5,
+        builder: (context, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              // Handle
+              Container(
+                margin: const EdgeInsets.only(top: 12, bottom: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              
+              // Header
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                child: Row(
+                  children: [
+                    Text(
+                      'Edit List',
+                      style: GoogleFonts.inter(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: Icon(PhosphorIcons.x()),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              
+              const Divider(height: 1),
+              
+              // Content
+              Expanded(
+                child: ListView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.all(24),
+                  children: [
+                    // Title & Description Section
+                    Text(
+                      'List Details',
+                      style: GoogleFonts.inter(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey.shade800,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    TextField(
+                      controller: titleController,
+                      decoration: InputDecoration(
+                        labelText: 'List Title',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        prefixIcon: Icon(PhosphorIcons.textT()),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    TextField(
+                      controller: descriptionController,
+                      decoration: InputDecoration(
+                        labelText: 'Description',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        prefixIcon: Icon(PhosphorIcons.article()),
+                      ),
+                      maxLines: 3,
+                    ),
+                    
+                    const SizedBox(height: 32),
+                    
+                    // Privacy Settings
+                    Text(
+                      'Privacy Settings',
+                      style: GoogleFonts.inter(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey.shade800,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              Icon(PhosphorIcons.globe(), color: Colors.grey.shade600),
+                              const SizedBox(width: 12),
+                              Text(
+                                'Current Privacy: ${listData['privacy'] ?? 'public'}',
+                                style: GoogleFonts.inter(
+                                  fontSize: 14,
+                                  color: Colors.grey.shade700,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Privacy settings will be available in future updates',
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: Colors.grey.shade500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 32),
+                    
+                    // Manage Items Section
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Manage Items',
+                          style: GoogleFonts.inter(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey.shade800,
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            _addItemToList();
+                          },
+                          icon: Icon(PhosphorIcons.plus()),
+                          label: Text('Add Items'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.orange.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Items List Preview (manageable)
+                    _buildManageItemsSection(listData),
+                    
+                    const SizedBox(height: 32),
+                    
+                    // Save Button
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          try {
+                            final supabase = Supabase.instance.client;
+                            await supabase
+                                .from('lists')
+                                .update({
+                                  'title': titleController.text.trim(),
+                                  'description': descriptionController.text.trim(),
+                                  'updated_at': DateTime.now().toIso8601String(),
+                                })
+                                .eq('id', widget.listId);
+
+                            // Refresh list details
+                            ref.invalidate(listDetailsProvider(widget.listId));
+                            
+                            if (mounted) {
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('List updated successfully')),
+                              );
+                            }
+                          } catch (e) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Error updating list: $e')),
+                              );
+                            }
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange.shade600,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Text(
+                          'Save Changes',
+                          style: GoogleFonts.inter(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
+      ),
+    );
+  }
+
+  Widget _buildManageItemsSection(Map<String, dynamic> listData) {
+    final items = List<Map<String, dynamic>>.from(listData['list_items'] ?? []);
+    
+    if (items.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Column(
           children: [
-            ListTile(
-              leading: Icon(PhosphorIcons.textT()),
-              title: Text('Edit Title & Description'),
-              onTap: () {
-                Navigator.pop(context);
-                _showEditTitleDialog(listData);
-              },
+            Icon(
+              PhosphorIcons.listBullets(),
+              size: 48,
+              color: Colors.grey.shade400,
             ),
-            ListTile(
-              leading: Icon(PhosphorIcons.plus()),
-              title: Text('Add Items'),
-              onTap: () {
-                Navigator.pop(context);
-                _addItemToList();
-              },
+            const SizedBox(height: 16),
+            Text(
+              'No items in this list',
+              style: GoogleFonts.inter(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                color: Colors.grey.shade500,
+              ),
             ),
-            ListTile(
-              leading: Icon(PhosphorIcons.gear()),
-              title: Text('List Settings'),
-              onTap: () {
+            const SizedBox(height: 8),
+            Text(
+              'Tap "Add Items" to get started',
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                color: Colors.grey.shade400,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    
+    return Column(
+      children: items.take(5).map((item) => Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Row(
+          children: [
+            // Item Image
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade200,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: item['image_url'] != null
+                  ? Image.network(
+                      item['image_url'],
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Icon(
+                        PhosphorIcons.image(),
+                        color: Colors.grey.shade400,
+                      ),
+                    )
+                  : Icon(
+                      PhosphorIcons.image(),
+                      color: Colors.grey.shade400,
+                    ),
+            ),
+            const SizedBox(width: 12),
+            
+            // Item Details
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item['title'] ?? 'Untitled',
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey.shade800,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (item['description'] != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      item['description'],
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            
+            // Delete Button
+            IconButton(
+              icon: Icon(
+                PhosphorIcons.trash(),
+                color: Colors.red.shade600,
+                size: 18,
+              ),
+              onPressed: () {
                 Navigator.pop(context);
-                _showListSettings(listData);
+                _showRemoveItemConfirmation(item);
               },
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancel'),
-          ),
-        ],
-      ),
+      )).toList(),
     );
   }
 
@@ -536,6 +732,138 @@ class _ModernListViewPageState extends ConsumerState<ModernListViewPage> {
     );
   }
 
+  void _showManageItemsDialog() {
+    final listDetailsAsync = ref.watch(listDetailsProvider(widget.listId));
+    final listData = listDetailsAsync.value;
+    
+    if (listData == null || listData['list_items'] == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to load list items')),
+      );
+      return;
+    }
+    
+    final items = List<Map<String, dynamic>>.from(listData['list_items'] ?? []);
+    
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        maxChildSize: 0.95,
+        minChildSize: 0.5,
+        builder: (context, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              // Handle
+              Container(
+                margin: const EdgeInsets.only(top: 12, bottom: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              
+              // Header
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                child: Row(
+                  children: [
+                    Text(
+                      'Manage Items',
+                      style: GoogleFonts.inter(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: Icon(PhosphorIcons.x()),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              
+              const Divider(height: 1),
+              
+              // Items List
+              Expanded(
+                child: items.isEmpty
+                    ? Center(
+                        child: Text(
+                          'No items in this list',
+                          style: GoogleFonts.inter(color: Colors.grey.shade500),
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: scrollController,
+                        padding: const EdgeInsets.all(16),
+                        itemCount: items.length,
+                        itemBuilder: (context, index) {
+                          final item = items[index];
+                          return ListTile(
+                            leading: Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade200,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              clipBehavior: Clip.antiAlias,
+                              child: item['image_url'] != null
+                                  ? Image.network(
+                                      item['image_url'],
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => Icon(
+                                        PhosphorIcons.image(),
+                                        color: Colors.grey.shade400,
+                                      ),
+                                    )
+                                  : Icon(
+                                      PhosphorIcons.image(),
+                                      color: Colors.grey.shade400,
+                                    ),
+                            ),
+                            title: Text(
+                              item['title'] ?? 'Untitled',
+                              style: GoogleFonts.inter(fontWeight: FontWeight.w500),
+                            ),
+                            subtitle: item['description'] != null
+                                ? Text(
+                                    item['description'],
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  )
+                                : null,
+                            trailing: IconButton(
+                              icon: Icon(
+                                PhosphorIcons.trash(),
+                                color: Colors.red.shade600,
+                              ),
+                              onPressed: () {
+                                Navigator.pop(context);
+                                _showRemoveItemConfirmation(item);
+                              },
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _deleteList() async {
     final listDetailsAsync = ref.read(listDetailsProvider(widget.listId));
     final listData = listDetailsAsync.value;
@@ -614,13 +942,26 @@ class _ModernListViewPageState extends ConsumerState<ModernListViewPage> {
     final category = listData['categories'] as Map<String, dynamic>?;
     final categoryName = category?['display_name'] ?? 'Unknown';
     
-    // Navigate to content selection page for the same category
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ContentSelectionPage(
-          category: categoryName,
-          existingListId: widget.listId, // Pass existing list ID to add items
+    // Show modal popup instead of navigating to a page
+    _showAddItemModal(categoryName);
+  }
+
+  void _showAddItemModal(String categoryName) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.9,
+        maxChildSize: 0.95,
+        minChildSize: 0.5,
+        builder: (context, scrollController) => AddItemModal(
+          categoryName: categoryName,
+          listId: widget.listId,
+          onItemsAdded: () {
+            // Refresh list details when items are added
+            ref.invalidate(listDetailsProvider(widget.listId));
+          },
         ),
       ),
     );
@@ -779,6 +1120,7 @@ class _ModernListViewPageState extends ConsumerState<ModernListViewPage> {
   @override
   Widget build(BuildContext context) {
     final listDetailsAsync = ref.watch(listDetailsProvider(widget.listId));
+    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
     
     return Scaffold(
       backgroundColor: Colors.white,
@@ -822,16 +1164,6 @@ class _ModernListViewPageState extends ConsumerState<ModernListViewPage> {
         ),
         centerTitle: true,
         actions: [
-          // Edit button for owners
-          if (_isOwner)
-            IconButton(
-              icon: Icon(
-                PhosphorIcons.pencil(),
-                color: Colors.grey.shade800,
-              ),
-              onPressed: () => _editList(),
-              tooltip: 'Edit List',
-            ),
           IconButton(
             icon: Icon(
               PhosphorIcons.dotsThreeVertical(),
@@ -850,15 +1182,24 @@ class _ModernListViewPageState extends ConsumerState<ModernListViewPage> {
           
           // Check ownership
           final currentUserId = Supabase.instance.client.auth.currentUser?.id;
-          final listOwnerId = listData['user_id'];
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              setState(() {
-                _isOwner = currentUserId == listOwnerId;
-                _listOwnerId = listOwnerId;
-              });
-            }
-          });
+          final listOwnerId = listData['creator_id'] ?? listData['user_id']; // Check both fields
+          final isOwner = currentUserId != null && currentUserId == listOwnerId;
+          _listOwnerId = listOwnerId;
+          
+          // Debug logs
+          print('=== OWNER CHECK ===');
+          print('Current User ID: $currentUserId');
+          print('List Owner ID: $listOwnerId');
+          print('Is Owner: $isOwner');
+          print('List Title: ${listData['title']}');
+          print('==================');
+          
+          // Force a visual indicator for debugging
+          if (isOwner) {
+            print('>>> USER IS THE OWNER - EDIT BUTTONS SHOULD BE VISIBLE <<<');
+          } else {
+            print('>>> USER IS NOT THE OWNER - NO EDIT BUTTONS <<<');
+          }
           
           final profile = listData['users_profiles'];
           final category = listData['categories'];
@@ -1011,6 +1352,7 @@ class _ModernListViewPageState extends ConsumerState<ModernListViewPage> {
                 
                 const SizedBox(height: 24),
                 
+                
                 // 5. List items in 3x3 grid
                 if (listItems.isNotEmpty)
                   Padding(
@@ -1019,15 +1361,15 @@ class _ModernListViewPageState extends ConsumerState<ModernListViewPage> {
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 3,
-                        childAspectRatio: 0.7,
+                        crossAxisCount: 4,
+                        childAspectRatio: 0.5,
                         crossAxisSpacing: 12,
                         mainAxisSpacing: 12,
                       ),
                       itemCount: listItems.length,
                       itemBuilder: (context, index) {
                         final item = listItems[index];
-                        return _buildGridItem(item, index + 1);
+                        return _buildGridItem(item, index + 1, isOwner);
                       },
                     ),
                   ),
@@ -1128,14 +1470,6 @@ class _ModernListViewPageState extends ConsumerState<ModernListViewPage> {
           ),
         ),
       ),
-      floatingActionButton: _isOwner ? FloatingActionButton(
-        onPressed: _addItemToList,
-        backgroundColor: Colors.orange.shade600,
-        child: Icon(
-          PhosphorIcons.plus(),
-          color: Colors.white,
-        ),
-      ) : null,
       bottomNavigationBar: BottomMenu(
         currentIndex: widget.bottomMenuIndex,
         onTap: (index) {
@@ -1184,19 +1518,11 @@ class _ModernListViewPageState extends ConsumerState<ModernListViewPage> {
     );
   }
 
-  Widget _buildGridItem(Map<String, dynamic> item, int position) {
+  Widget _buildGridItem(Map<String, dynamic> item, int position, bool isOwner) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.shade100,
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Material(
         color: Colors.transparent,
@@ -1204,27 +1530,27 @@ class _ModernListViewPageState extends ConsumerState<ModernListViewPage> {
           onTap: () {
             // TODO: Navigate to content details
           },
-          onLongPress: _isOwner ? () => _showItemOptions(item) : null,
-          borderRadius: BorderRadius.circular(12),
+          onLongPress: isOwner ? () => _showItemOptions(item) : null,
+          borderRadius: BorderRadius.circular(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Item Image
               Expanded(
-                flex: 3,
+                flex: 4,
                 child: Stack(
                   children: [
                     Container(
                       width: double.infinity,
                       decoration: BoxDecoration(
-                        borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                        borderRadius: BorderRadius.circular(16),
                         color: Colors.grey.shade100,
                       ),
                       child: item['image_url'] != null && 
                           item['image_url'].toString().isNotEmpty &&
                           item['image_url'].toString() != ''
                         ? ClipRRect(
-                            borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                            borderRadius: BorderRadius.circular(16),
                             child: Image.network(
                               item['image_url'].toString().replaceFirst('http://', 'https://'),
                               fit: BoxFit.cover,
@@ -1286,30 +1612,6 @@ class _ModernListViewPageState extends ConsumerState<ModernListViewPage> {
                             size: 32,
                           ),
                     ),
-                    
-                    // Position Number
-                    Positioned(
-                      top: 8,
-                      left: 8,
-                      child: Container(
-                        width: 24,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          color: Colors.orange.shade600,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Center(
-                          child: Text(
-                            position.toString(),
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -1318,14 +1620,14 @@ class _ModernListViewPageState extends ConsumerState<ModernListViewPage> {
               Expanded(
                 flex: 2,
                 child: Padding(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(12),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         item['title'] ?? 'Untitled',
                         style: GoogleFonts.inter(
-                          fontSize: 12,
+                          fontSize: 14,
                           fontWeight: FontWeight.w600,
                           color: Colors.grey.shade800,
                         ),
@@ -1333,15 +1635,15 @@ class _ModernListViewPageState extends ConsumerState<ModernListViewPage> {
                         overflow: TextOverflow.ellipsis,
                       ),
                       if (item['description'] != null) ...[
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 6),
                         Expanded(
                           child: Text(
                             item['description'],
                             style: GoogleFonts.inter(
-                              fontSize: 10,
+                              fontSize: 12,
                               color: Colors.grey.shade600,
                             ),
-                            maxLines: 2,
+                            maxLines: 3,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -1355,5 +1657,794 @@ class _ModernListViewPageState extends ConsumerState<ModernListViewPage> {
         ),
       ),
     );
+  }
+}
+
+class AddItemModal extends ConsumerStatefulWidget {
+  final String categoryName;
+  final String listId;
+  final VoidCallback onItemsAdded;
+
+  const AddItemModal({
+    super.key,
+    required this.categoryName,
+    required this.listId,
+    required this.onItemsAdded,
+  });
+
+  @override
+  ConsumerState<AddItemModal> createState() => _AddItemModalState();
+}
+
+class _AddItemModalState extends ConsumerState<AddItemModal> {
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+  final List<ContentItem> _selectedItems = [];
+  String _currentQuery = '';
+  Timer? _debounceTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController.addListener(_onSearchTextChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _searchFocusNode.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _debounceTimer?.cancel();
+    _searchController.removeListener(_onSearchTextChanged);
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _onSearchTextChanged() {
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+      if (_searchController.text != _currentQuery) {
+        setState(() {
+          _currentQuery = _searchController.text;
+        });
+      }
+    });
+  }
+
+  ContentItem _convertToLocalContentItem(core.ContentItem coreItem) {
+    return ContentItem(
+      id: coreItem.id,
+      title: coreItem.title,
+      subtitle: coreItem.subtitle,
+      imageUrl: coreItem.imageUrl,
+      category: widget.categoryName,
+      metadata: coreItem.metadata,
+      source: coreItem.source,
+    );
+  }
+
+  void _toggleItemSelection(ContentItem item) {
+    setState(() {
+      if (_selectedItems.contains(item)) {
+        _selectedItems.remove(item);
+      } else {
+        _selectedItems.add(item);
+      }
+    });
+  }
+
+  Future<void> _addSelectedItems() async {
+    if (_selectedItems.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Please select at least one item'),
+          backgroundColor: Colors.orange.shade600,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final supabase = ref.read(supabaseClientProvider);
+      
+      // Get current max position
+      final existingItems = await supabase
+          .from('list_items')
+          .select('position')
+          .eq('list_id', widget.listId)
+          .order('position', ascending: false)
+          .limit(1);
+      
+      int startPosition = 1;
+      if (existingItems.isNotEmpty) {
+        startPosition = (existingItems[0]['position'] as int) + 1;
+      }
+      
+      // Add new items
+      final listItems = _selectedItems.map((item) => {
+        'list_id': widget.listId,
+        'external_id': item.id,
+        'title': item.title,
+        'description': item.subtitle,
+        'image_url': item.imageUrl,
+        'external_data': item.metadata,
+        'source': item.source ?? 'manual',
+        'position': startPosition + _selectedItems.indexOf(item),
+      }).toList();
+      
+      await supabase
+          .from('list_items')
+          .insert(listItems);
+      
+      if (mounted) {
+        widget.onItemsAdded();
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${_selectedItems.length} items added to list'),
+            backgroundColor: Colors.green.shade600,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error adding items: $e'),
+            backgroundColor: Colors.red.shade600,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Map category display names to API category names
+    final categoryMapping = {
+      'Places': 'places',
+      'Movies': 'movies', 
+      'Books': 'books',
+      'TV Shows': 'tv_shows',
+      'Videos': 'videos',
+      'Musics': 'music',
+      'Games': 'games',
+      'People': 'people',
+      'Poetry': 'poetry',
+    };
+    
+    final apiCategoryName = categoryMapping[widget.categoryName] ?? widget.categoryName.toLowerCase();
+    
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        children: [
+          // Handle
+          Container(
+            margin: const EdgeInsets.only(top: 12, bottom: 8),
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          
+          // Header
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            child: Row(
+              children: [
+                Text(
+                  'Add ${widget.categoryName} Items',
+                  style: GoogleFonts.inter(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: Icon(PhosphorIcons.x()),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+          ),
+          
+          const Divider(height: 1),
+          
+          // Search Bar
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: TextField(
+                controller: _searchController,
+                focusNode: _searchFocusNode,
+                autofocus: true,
+                style: GoogleFonts.inter(
+                  fontSize: 16,
+                  color: Colors.grey.shade800,
+                ),
+                decoration: InputDecoration(
+                  hintText: 'Search ${widget.categoryName.toLowerCase()}...',
+                  hintStyle: GoogleFonts.inter(
+                    fontSize: 16,
+                    color: Colors.grey.shade500,
+                  ),
+                  prefixIcon: Icon(
+                    PhosphorIcons.magnifyingGlass(),
+                    color: Colors.grey.shade500,
+                    size: 20,
+                  ),
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                ),
+              ),
+            ),
+          ),
+          
+          // Selected Items Preview
+          if (_selectedItems.isNotEmpty) ...[
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 20),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${_selectedItems.length} items selected',
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.orange.shade700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    height: 60,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: _selectedItems.length,
+                      itemBuilder: (context, index) {
+                        final item = _selectedItems[index];
+                        return Container(
+                          width: 50,
+                          margin: const EdgeInsets.only(right: 8),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            color: Colors.grey.shade200,
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: item.imageUrl != null
+                              ? Image.network(
+                                  item.imageUrl!,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Icon(
+                                    PhosphorIcons.image(),
+                                    color: Colors.grey.shade400,
+                                  ),
+                                )
+                              : Icon(
+                                  PhosphorIcons.image(),
+                                  color: Colors.grey.shade400,
+                                ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+          
+          // Search Results
+          Expanded(
+            child: _currentQuery.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          PhosphorIcons.magnifyingGlass(),
+                          size: 64,
+                          color: Colors.grey.shade300,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Search for ${widget.categoryName.toLowerCase()} to add',
+                          style: GoogleFonts.inter(
+                            fontSize: 16,
+                            color: Colors.grey.shade500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : Consumer(
+                    builder: (context, ref, child) {
+                      final searchResults = ref.watch(contentSearchProvider((
+                        query: _currentQuery,
+                        category: apiCategoryName,
+                      )));
+                      
+                      return searchResults.when(
+                        data: (results) {
+                          if (results.isEmpty) {
+                            return Center(
+                              child: Text(
+                                'No results found',
+                                style: GoogleFonts.inter(
+                                  fontSize: 16,
+                                  color: Colors.grey.shade500,
+                                ),
+                              ),
+                            );
+                          }
+                          
+                          return ListView.builder(
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            itemCount: results.length,
+                            itemBuilder: (context, index) {
+                              final result = results[index];
+                              final localItem = _convertToLocalContentItem(result);
+                              final isSelected = _selectedItems.contains(localItem);
+                              
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 12),
+                                decoration: BoxDecoration(
+                                  color: isSelected ? Colors.orange.shade50 : Colors.white,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: isSelected ? Colors.orange.shade300 : Colors.grey.shade200,
+                                  ),
+                                ),
+                                child: ListTile(
+                                  leading: Container(
+                                    width: 48,
+                                    height: 48,
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey.shade200,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    clipBehavior: Clip.antiAlias,
+                                    child: result.imageUrl != null
+                                        ? Image.network(
+                                            result.imageUrl!,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (_, __, ___) => Icon(
+                                              PhosphorIcons.image(),
+                                              color: Colors.grey.shade400,
+                                            ),
+                                          )
+                                        : Icon(
+                                            PhosphorIcons.image(),
+                                            color: Colors.grey.shade400,
+                                          ),
+                                  ),
+                                  title: Text(
+                                    result.title,
+                                    style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                                  ),
+                                  subtitle: result.subtitle != null
+                                      ? Text(
+                                          result.subtitle!,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        )
+                                      : null,
+                                  trailing: Icon(
+                                    isSelected 
+                                        ? PhosphorIcons.checkCircle(PhosphorIconsStyle.fill)
+                                        : PhosphorIcons.plus(),
+                                    color: isSelected ? Colors.orange.shade600 : Colors.grey.shade600,
+                                  ),
+                                  onTap: () => _toggleItemSelection(localItem),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                        loading: () => const Center(child: CircularProgressIndicator()),
+                        error: (error, stack) => Center(
+                          child: Text(
+                            'Error: $error',
+                            style: GoogleFonts.inter(color: Colors.red),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+          
+          // Add Button
+          if (_selectedItems.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.all(20),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _addSelectedItems,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange.shade600,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: Text(
+                    'Add ${_selectedItems.length} item${_selectedItems.length == 1 ? '' : 's'}',
+                    style: GoogleFonts.inter(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class CommentsBottomSheet extends ConsumerStatefulWidget {
+  final String listId;
+
+  const CommentsBottomSheet({
+    super.key,
+    required this.listId,
+  });
+
+  @override
+  ConsumerState<CommentsBottomSheet> createState() => _CommentsBottomSheetState();
+}
+
+class _CommentsBottomSheetState extends ConsumerState<CommentsBottomSheet> {
+  final TextEditingController _commentController = TextEditingController();
+  final FocusNode _commentFocusNode = FocusNode();
+  bool _isSubmitting = false;
+
+  @override
+  void dispose() {
+    _commentController.dispose();
+    _commentFocusNode.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submitComment() async {
+    final commentText = _commentController.text.trim();
+    if (commentText.isEmpty) return;
+
+    setState(() {
+      _isSubmitting = true;
+    });
+
+    try {
+      final supabase = ref.read(supabaseClientProvider);
+      final user = supabase.auth.currentUser;
+      
+      if (user == null) {
+        throw Exception('User not authenticated');
+      }
+
+      await supabase.from('list_comments').insert({
+        'list_id': widget.listId,
+        'user_id': user.id,
+        'content': commentText,
+      });
+
+      _commentController.clear();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Comment added successfully'),
+            backgroundColor: Colors.green.shade600,
+          ),
+        );
+        // Refresh the modal by calling setState
+        setState(() {});
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error adding comment: $e'),
+            backgroundColor: Colors.red.shade600,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.7,
+      maxChildSize: 0.95,
+      minChildSize: 0.5,
+      builder: (context, scrollController) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          children: [
+            // Handle
+            Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            
+            // Header
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              child: Row(
+                children: [
+                  Text(
+                    'Comments',
+                    style: GoogleFonts.inter(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: Icon(PhosphorIcons.x()),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            
+            const Divider(height: 1),
+            
+            // Comments List
+            Expanded(
+              child: FutureBuilder<List<Map<String, dynamic>>>(
+                future: _loadComments(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  
+                  if (snapshot.hasError) {
+                    return Center(
+                      child: Text(
+                        'Error loading comments: ${snapshot.error}',
+                        style: GoogleFonts.inter(color: Colors.red),
+                      ),
+                    );
+                  }
+                  
+                  final comments = snapshot.data ?? [];
+                  
+                  if (comments.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            PhosphorIcons.chatCircle(),
+                            size: 64,
+                            color: Colors.grey.shade300,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No comments yet',
+                            style: GoogleFonts.inter(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.grey.shade500,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Be the first to comment on this list',
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              color: Colors.grey.shade400,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  
+                  return ListView.builder(
+                    controller: scrollController,
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                    itemCount: comments.length,
+                    itemBuilder: (context, index) {
+                      final comment = comments[index];
+                      final profile = comment['users_profiles'] as Map<String, dynamic>?;
+                      
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 16),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // User Avatar
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Colors.grey.shade200,
+                                image: profile?['avatar_url'] != null
+                                    ? DecorationImage(
+                                        image: NetworkImage(profile!['avatar_url']),
+                                        fit: BoxFit.cover,
+                                      )
+                                    : null,
+                              ),
+                              child: profile?['avatar_url'] == null
+                                  ? Icon(
+                                      PhosphorIcons.user(),
+                                      size: 20,
+                                      color: Colors.grey.shade500,
+                                    )
+                                  : null,
+                            ),
+                            const SizedBox(width: 12),
+                            
+                            // Comment Content
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Text(
+                                        profile?['username'] ?? 'Anonymous',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.grey.shade800,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        timeago.format(DateTime.parse(comment['created_at'])),
+                                        style: GoogleFonts.inter(
+                                          fontSize: 12,
+                                          color: Colors.grey.shade500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    comment['content'] ?? '',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 14,
+                                      color: Colors.grey.shade700,
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+            
+            // Comment Input
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                border: Border(top: BorderSide(color: Colors.grey.shade200)),
+              ),
+              child: SafeArea(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _commentController,
+                        focusNode: _commentFocusNode,
+                        maxLines: null,
+                        keyboardType: TextInputType.multiline,
+                        textInputAction: TextInputAction.send,
+                        onSubmitted: (_) => _submitComment(),
+                        decoration: InputDecoration(
+                          hintText: 'Add a comment...',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(24),
+                            borderSide: BorderSide.none,
+                          ),
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                        ),
+                        style: GoogleFonts.inter(fontSize: 14),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade600,
+                        shape: BoxShape.circle,
+                      ),
+                      child: IconButton(
+                        icon: _isSubmitting
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                ),
+                              )
+                            : const Icon(
+                                Icons.send,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                        onPressed: _isSubmitting ? null : _submitComment,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> _loadComments() async {
+    try {
+      final supabase = ref.read(supabaseClientProvider);
+      final response = await supabase
+          .from('list_comments')
+          .select('''
+            *,
+            users_profiles!user_id(username, avatar_url)
+          ''')
+          .eq('list_id', widget.listId)
+          .order('created_at', ascending: true);
+      
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('Error loading comments: $e');
+      return [];
+    }
   }
 }
